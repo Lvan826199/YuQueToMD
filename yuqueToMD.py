@@ -7,6 +7,7 @@ import os
 import sys
 import tarfile
 import tempfile
+import time
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
@@ -20,6 +21,9 @@ META_JSON = "$meta.json"
 
 DEFAULT_HEADING_STYLE = "ATX"
 DEFAULT_CODE_LANGUAGE = "python"
+MAX_RETRIES = 3
+
+failed_images = []
 
 content_type_to_extension = {
     "image/gif": ".gif",
@@ -174,13 +178,27 @@ def download_images_and_patch_html(output_dir_path, sanitized_title, html):
         if not src:
             continue
 
+        src = fix_image_url(src)
         print("Download %s" % src)
-        try:
-            resp = get(src, timeout=30)
-            resp.raise_for_status()
-        except Exception as e:
-            print("  [SKIP] Failed to download: %s" % e)
+
+        success = False
+        for attempt in range(MAX_RETRIES):
+            try:
+                resp = get(src, timeout=30)
+                resp.raise_for_status()
+                success = True
+                break
+            except Exception as e:
+                if attempt < MAX_RETRIES - 1:
+                    time.sleep(1)
+                else:
+                    print("  [FAIL] %s (retried %d times)" % (e, MAX_RETRIES))
+
+        if not success:
+            md_path = os.path.join(output_dir_path, sanitized_title + ".md")
+            failed_images.append((md_path, src))
             continue
+
         content_type = resp.headers.get("Content-Type", "").split(";", 1)[0].lower()
         file_name = sanitized_title + "_%03d%s" % (
             no,
@@ -192,6 +210,37 @@ def download_images_and_patch_html(output_dir_path, sanitized_title, html):
         no = no + 1
         image["src"] = "./attachments/" + file_name
     return str(bs)
+
+
+def fix_image_url(url):
+    if url.count("?x-oss-process") > 1:
+        idx = url.index("?x-oss-process")
+        second = url.index("?x-oss-process", idx + 1)
+        url = url[:second]
+    return url
+
+
+def write_failed_log(output_dir):
+    if not failed_images:
+        return
+    log_path = os.path.join(output_dir, "FAILED_IMAGES.md")
+    existing = []
+    if os.path.exists(log_path):
+        with open(log_path, "r", encoding="utf-8") as f:
+            existing = f.readlines()
+
+    with open(log_path, "w", encoding="utf-8") as f:
+        if not existing:
+            f.write("# 图片下载失败记录\n\n")
+            f.write("| MD 文件 | 图片 URL |\n")
+            f.write("| --- | --- |\n")
+        else:
+            f.writelines(existing)
+
+        for md_path, url in failed_images:
+            f.write("| %s | %s |\n" % (md_path, url))
+
+    print("\n[WARN] %d images failed, logged to %s" % (len(failed_images), log_path))
 
 
 def get_code_language(element):
@@ -257,6 +306,8 @@ def main():
         print("Total " + str(len(toc)) + " files")
 
         extract_repos(repo_dir, args.output, toc, args.download_image)
+
+    write_failed_log(args.output)
 
 
 # 解压 tar 格式文件
