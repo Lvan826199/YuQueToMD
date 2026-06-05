@@ -9,4 +9,8 @@ dependencies = [
     "beautifulsoup4>=4.12.2",
     "markdownify>=0.11.6",
     "requests>=2.26.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "jinja2>=3.1",
+    "mistune>=3.0",
 ]

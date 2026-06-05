@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YuQue Docs</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+</head>
+<body>
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>YuQue Docs</h2>
+            <input type="text" id="search-input" placeholder="搜索文档内容...">
+        </div>
+        <div id="search-results" class="search-results" style="display:none;"></div>
+        <nav id="tree-nav" class="tree-nav"></nav>
+    </aside>
+    <main class="content">
+        <div id="doc-content" class="markdown-body">
+            <div class="welcome">
+                <h1>欢迎</h1>
+                <p>从左侧目录选择文档开始阅读，或使用搜索框查找内容。</p>
+            </div>
+        </div>
+    </main>
+    <aside class="outline-panel" id="outline-panel">
+        <div class="outline-resize-handle" id="outline-resize-handle"></div>
+        <div class="outline-header">大纲</div>
+        <nav id="outline-nav" class="outline-nav"></nav>
+    </aside>
+    <script src="/static/app.js"></script>
+</body>
+</html>
