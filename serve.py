@@ -3,6 +3,7 @@
 # 公众号: 梦无矶测开实录
 import argparse
 import os
+import re
 import socket
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -84,10 +85,26 @@ async def search(q: str = Query(..., min_length=1)):
     return JSONResponse(results)
 
 
+CN_NUM_MAP = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
+              "十一": 11, "十二": 12, "十三": 13, "十四": 14, "十五": 15, "十六": 16, "十七": 17, "十八": 18, "十九": 19, "二十": 20}
+CN_NUM_RE = re.compile(r'^([一二三四五六七八九十]+)[、.．]')
+DIGIT_RE = re.compile(r'^(\d+)')
+
+
+def natural_sort_key(name: str):
+    m = CN_NUM_RE.match(name)
+    if m:
+        return (0, CN_NUM_MAP.get(m.group(1), 99), name.lower())
+    m = DIGIT_RE.match(name)
+    if m:
+        return (0, int(m.group(1)), name.lower())
+    return (1, 0, name.lower())
+
+
 def build_tree(dir_path: Path) -> list:
     items = []
     try:
-        entries = sorted(dir_path.iterdir(), key=lambda e: (e.is_file(), e.name.lower()))
+        entries = sorted(dir_path.iterdir(), key=lambda e: (e.is_file(), natural_sort_key(e.name)))
     except PermissionError:
         return items
 

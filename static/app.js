@@ -3,6 +3,7 @@ const treeNav = document.getElementById("tree-nav");
 const docContent = document.getElementById("doc-content");
 const searchInput = document.getElementById("search-input");
 const searchResults = document.getElementById("search-results");
+const searchClear = document.getElementById("search-clear");
 const outlineNav = document.getElementById("outline-nav");
 const contentEl = document.querySelector(".content");
 
@@ -49,7 +50,7 @@ treeNav.addEventListener("click", (e) => {
     }
 });
 
-async function loadDoc(path) {
+async function loadDoc(path, highlight) {
     const resp = await fetch(`/api/doc?path=${encodeURIComponent(path)}`);
     const data = await resp.json();
     if (data.error) {
@@ -58,20 +59,77 @@ async function loadDoc(path) {
     }
     docContent.innerHTML = data.html;
     document.title = data.title + " - YuQue Docs";
-    hljs.highlightAll();
+    docContent.querySelectorAll("pre code").forEach((block) => {
+        if (block.className === "language-plain") {
+            block.className = "";
+        }
+        hljs.highlightElement(block);
+    });
+    addCopyButtons();
     contentEl.scrollTop = 0;
     buildOutline();
+    if (highlight) {
+        setTimeout(() => scrollToHighlight(highlight), 100);
+    }
+}
+
+function scrollToHighlight(keyword) {
+    const walker = document.createTreeWalker(docContent, NodeFilter.SHOW_TEXT);
+    const lowerKw = keyword.toLowerCase();
+    while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (node.textContent.toLowerCase().includes(lowerKw)) {
+            const el = node.parentElement;
+            if (el) {
+                el.scrollIntoView({ behavior: "smooth", block: "center" });
+                const mark = document.createElement("mark");
+                mark.style.background = "#fff3a8";
+                const idx = node.textContent.toLowerCase().indexOf(lowerKw);
+                const range = document.createRange();
+                range.setStart(node, idx);
+                range.setEnd(node, idx + keyword.length);
+                range.surroundContents(mark);
+                setTimeout(() => { mark.style.background = "transparent"; }, 3000);
+            }
+            break;
+        }
+    }
+}
+
+function addCopyButtons() {
+    docContent.querySelectorAll("pre").forEach((pre) => {
+        const btn = document.createElement("button");
+        btn.className = "copy-btn";
+        btn.textContent = "复制";
+        btn.addEventListener("click", () => {
+            const code = pre.querySelector("code");
+            navigator.clipboard.writeText(code ? code.textContent : pre.textContent).then(() => {
+                btn.textContent = "已复制";
+                setTimeout(() => { btn.textContent = "复制"; }, 2000);
+            });
+        });
+        pre.style.position = "relative";
+        pre.appendChild(btn);
+    });
 }
 
 searchInput.addEventListener("input", () => {
     clearTimeout(searchTimer);
     const q = searchInput.value.trim();
+    searchClear.style.display = q ? "block" : "none";
     if (!q) {
         searchResults.style.display = "none";
         treeNav.style.display = "";
         return;
     }
     searchTimer = setTimeout(() => doSearch(q), 300);
+});
+
+searchClear.addEventListener("click", () => {
+    searchInput.value = "";
+    searchClear.style.display = "none";
+    searchResults.style.display = "none";
+    treeNav.style.display = "";
 });
 
 async function doSearch(q) {
@@ -94,13 +152,14 @@ async function doSearch(q) {
 searchResults.addEventListener("click", (e) => {
     const item = e.target.closest(".search-item");
     if (item) {
-        loadDoc(item.dataset.path);
+        loadDoc(item.dataset.path, searchInput.value.trim());
     }
 });
 
 searchInput.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
         searchInput.value = "";
+        searchClear.style.display = "none";
         searchResults.style.display = "none";
         treeNav.style.display = "";
     }
@@ -148,7 +207,10 @@ contentEl.addEventListener("scroll", () => {
     if (current) {
         outlineNav.querySelectorAll(".outline-item.active").forEach(el => el.classList.remove("active"));
         const active = outlineNav.querySelector(`[data-id="${current}"]`);
-        if (active) active.classList.add("active");
+        if (active) {
+            active.classList.add("active");
+            active.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
     }
 });
 
