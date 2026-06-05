@@ -1,6 +1,6 @@
 # coding=utf-8
 # Author: 梦无矶
-# 公众号: 梦无矶测开实战
+# 公众号: 梦无矶测开实录
 import argparse
 import json
 import os
