@@ -59,6 +59,7 @@ async function loadDoc(path, highlight) {
     }
     docContent.innerHTML = data.html;
     document.title = data.title + " - YuQue Docs";
+    location.hash = encodeURIComponent(path);
     docContent.querySelectorAll("pre code").forEach((block) => {
         if (block.className === "language-plain") {
             block.className = "";
@@ -166,6 +167,11 @@ searchInput.addEventListener("keydown", (e) => {
 });
 
 loadTree();
+
+if (location.hash) {
+    const path = decodeURIComponent(location.hash.slice(1));
+    if (path) loadDoc(path);
+}
 
 function buildOutline() {
     const headings = docContent.querySelectorAll("h1, h2, h3, h4, h5, h6");
