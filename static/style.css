@@ -420,3 +420,50 @@ body {
 .outline-item[data-level="4"] { padding-left: 40px; }
 .outline-item[data-level="5"] { padding-left: 52px; }
 .outline-item[data-level="6"] { padding-left: 64px; }
+
+.doc-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #d0d7de;
+}
+
+.edit-btn, .save-btn, .done-btn {
+    padding: 5px 14px;
+    font-size: 13px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid #d0d7de;
+    background: #f6f8fa;
+    color: #24292f;
+}
+
+.edit-btn:hover, .done-btn:hover {
+    background: #eaeef2;
+}
+
+.save-btn {
+    background: #2da44e;
+    color: #fff;
+    border-color: #2da44e;
+}
+
+.save-btn:hover {
+    background: #298e46;
+}
+
+.save-status {
+    font-size: 13px;
+    margin-left: 8px;
+}
+
+.EasyMDEContainer {
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+}
+
+.EasyMDEContainer .CodeMirror {
+    border-radius: 0 0 6px 6px;
+}

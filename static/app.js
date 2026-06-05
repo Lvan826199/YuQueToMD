@@ -8,6 +8,9 @@ const outlineNav = document.getElementById("outline-nav");
 const contentEl = document.querySelector(".content");
 
 let searchTimer = null;
+let currentDocPath = null;
+let easyMDE = null;
+let autoSaveTimer = null;
 
 async function loadTree() {
     const resp = await fetch("/api/tree");
@@ -51,13 +54,14 @@ treeNav.addEventListener("click", (e) => {
 });
 
 async function loadDoc(path, highlight) {
+    currentDocPath = path;
     const resp = await fetch(`/api/doc?path=${encodeURIComponent(path)}`);
     const data = await resp.json();
     if (data.error) {
         docContent.innerHTML = `<p style="color:red;">${data.error}</p>`;
         return;
     }
-    docContent.innerHTML = data.html;
+    docContent.innerHTML = `<div class="doc-toolbar"><button class="edit-btn" id="edit-btn">编辑</button></div>` + data.html;
     document.title = data.title + " - YuQue Docs";
     location.hash = encodeURIComponent(path);
     docContent.querySelectorAll("pre code").forEach((block) => {
@@ -69,6 +73,7 @@ async function loadDoc(path, highlight) {
     addCopyButtons();
     contentEl.scrollTop = 0;
     buildOutline();
+    document.getElementById("edit-btn").addEventListener("click", () => enterEditMode(path));
     if (highlight) {
         setTimeout(() => scrollToHighlight(highlight), 100);
     }
@@ -244,3 +249,80 @@ resizeHandle.addEventListener("mousedown", (e) => {
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
 });
+
+async function enterEditMode(path) {
+    const resp = await fetch(`/api/raw?path=${encodeURIComponent(path)}`);
+    const data = await resp.json();
+    if (data.error) return;
+
+    docContent.innerHTML = `<div class="doc-toolbar">
+        <button class="save-btn" id="save-btn">保存</button>
+        <button class="done-btn" id="done-btn">完成</button>
+        <span class="save-status" id="save-status"></span>
+    </div><textarea id="editor-area"></textarea>`;
+
+    const textarea = document.getElementById("editor-area");
+    textarea.value = data.content;
+
+    easyMDE = new EasyMDE({
+        element: textarea,
+        spellChecker: false,
+        autofocus: true,
+        status: false,
+        minHeight: "calc(100vh - 120px)",
+        toolbar: ["bold", "italic", "heading", "|", "quote", "unordered-list", "ordered-list", "|",
+                  "link", "image", "code", "table", "|", "preview", "side-by-side", "fullscreen"],
+    });
+
+    easyMDE.codemirror.on("change", () => {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(() => saveDoc(path), 2000);
+    });
+
+    document.getElementById("save-btn").addEventListener("click", () => saveDoc(path));
+    document.getElementById("done-btn").addEventListener("click", () => exitEditMode(path));
+
+    document.addEventListener("keydown", editorKeyHandler);
+}
+
+function editorKeyHandler(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        if (currentDocPath) saveDoc(currentDocPath);
+    }
+}
+
+async function saveDoc(path) {
+    if (!easyMDE) return;
+    const content = easyMDE.value();
+    const statusEl = document.getElementById("save-status");
+    try {
+        const resp = await fetch("/api/save", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({path, content}),
+        });
+        const data = await resp.json();
+        if (data.ok) {
+            statusEl.textContent = "已保存";
+            statusEl.style.color = "#2da44e";
+        } else {
+            statusEl.textContent = "保存失败";
+            statusEl.style.color = "#cf222e";
+        }
+    } catch {
+        statusEl.textContent = "保存失败";
+        statusEl.style.color = "#cf222e";
+    }
+    setTimeout(() => { statusEl.textContent = ""; }, 2000);
+}
+
+function exitEditMode(path) {
+    document.removeEventListener("keydown", editorKeyHandler);
+    if (easyMDE) {
+        easyMDE.toTextArea();
+        easyMDE = null;
+    }
+    clearTimeout(autoSaveTimer);
+    loadDoc(path);
+}

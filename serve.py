@@ -10,7 +10,7 @@ from pathlib import Path
 
 import mistune
 import uvicorn
-from fastapi import FastAPI, Request, Query
+from fastapi import FastAPI, Request, Query, Body
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -83,6 +83,32 @@ async def search(q: str = Query(..., min_length=1)):
         if len(results) >= 50:
             break
     return JSONResponse(results)
+
+
+@app.get("/api/raw")
+async def raw(path: str = Query(...)):
+    file_path = (RESULT_DIR / path).resolve()
+    if not str(file_path).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    if not file_path.exists() or not file_path.suffix == ".md":
+        return JSONResponse({"error": "not found"}, status_code=404)
+    content = file_path.read_text(encoding="utf-8")
+    return JSONResponse({"content": content, "path": path})
+
+
+@app.post("/api/save")
+async def save(data: dict = Body(...)):
+    path = data.get("path", "")
+    content = data.get("content", "")
+    if not path:
+        return JSONResponse({"error": "path required"}, status_code=400)
+    file_path = (RESULT_DIR / path).resolve()
+    if not str(file_path).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    if not file_path.exists() or not file_path.suffix == ".md":
+        return JSONResponse({"error": "not found"}, status_code=404)
+    file_path.write_text(content, encoding="utf-8")
+    return JSONResponse({"ok": True})
 
 
 CN_NUM_MAP = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
