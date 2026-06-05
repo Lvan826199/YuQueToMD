@@ -430,7 +430,7 @@ body {
     border-bottom: 1px solid #d0d7de;
 }
 
-.edit-btn, .save-btn, .done-btn {
+.edit-btn, .save-btn, .done-btn, .cancel-btn, .exit-btn {
     padding: 5px 14px;
     font-size: 13px;
     border-radius: 6px;
@@ -440,8 +440,18 @@ body {
     color: #24292f;
 }
 
-.edit-btn:hover, .done-btn:hover {
+.edit-btn:hover, .done-btn:hover, .cancel-btn:hover, .exit-btn:hover {
     background: #eaeef2;
+}
+
+.exit-btn {
+    border-color: #cf222e;
+    color: #cf222e;
+}
+
+.exit-btn:hover {
+    background: #cf222e;
+    color: #fff;
 }
 
 .save-btn {
@@ -462,8 +472,39 @@ body {
 .EasyMDEContainer {
     border: 1px solid #d0d7de;
     border-radius: 6px;
+    width: 100%;
+    height: calc(100vh - 110px);
+    display: flex;
+    flex-direction: column;
 }
 
 .EasyMDEContainer .CodeMirror {
     border-radius: 0 0 6px 6px;
+    flex: 1;
+    height: auto !important;
+}
+
+.EasyMDEContainer .CodeMirror-scroll {
+    min-height: 100%;
+}
+
+.EasyMDEContainer .editor-preview-side {
+    background: #fff;
+    padding: 16px;
+    overflow-y: auto;
+}
+
+body.editing .outline-panel {
+    display: none;
+}
+
+body.editing .content {
+    padding: 8px 16px;
+    overflow: hidden;
+}
+
+body.editing .markdown-body {
+    max-width: 100%;
+    height: calc(100vh - 16px);
+    overflow: hidden;
 }

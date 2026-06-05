@@ -255,9 +255,12 @@ async function enterEditMode(path) {
     const data = await resp.json();
     if (data.error) return;
 
+    document.body.classList.add("editing");
     docContent.innerHTML = `<div class="doc-toolbar">
         <button class="save-btn" id="save-btn">保存</button>
         <button class="done-btn" id="done-btn">完成</button>
+        <button class="cancel-btn" id="cancel-btn">取消</button>
+        <button class="exit-btn" id="exit-btn">退出编辑</button>
         <span class="save-status" id="save-status"></span>
     </div><textarea id="editor-area"></textarea>`;
 
@@ -269,10 +272,31 @@ async function enterEditMode(path) {
         spellChecker: false,
         autofocus: true,
         status: false,
-        minHeight: "calc(100vh - 120px)",
-        toolbar: ["bold", "italic", "heading", "|", "quote", "unordered-list", "ordered-list", "|",
-                  "link", "image", "code", "table", "|", "preview", "side-by-side", "fullscreen"],
+        minHeight: "calc(100vh - 160px)",
+        toolbar: [
+            {name: "bold", action: EasyMDE.toggleBold, className: "fa fa-bold", title: "加粗"},
+            {name: "italic", action: EasyMDE.toggleItalic, className: "fa fa-italic", title: "斜体"},
+            {name: "heading", action: EasyMDE.toggleHeadingSmaller, className: "fa fa-header", title: "标题"},
+            "|",
+            {name: "quote", action: EasyMDE.toggleBlockquote, className: "fa fa-quote-left", title: "引用"},
+            {name: "unordered-list", action: EasyMDE.toggleUnorderedList, className: "fa fa-list-ul", title: "无序列表"},
+            {name: "ordered-list", action: EasyMDE.toggleOrderedList, className: "fa fa-list-ol", title: "有序列表"},
+            "|",
+            {name: "link", action: EasyMDE.drawLink, className: "fa fa-link", title: "链接"},
+            {name: "image", action: EasyMDE.drawImage, className: "fa fa-picture-o", title: "图片"},
+            {name: "code", action: EasyMDE.toggleCodeBlock, className: "fa fa-code", title: "代码块"},
+            {name: "table", action: EasyMDE.drawTable, className: "fa fa-table", title: "表格"},
+            "|",
+            {name: "preview", action: EasyMDE.togglePreview, className: "fa fa-eye no-disable", title: "预览"},
+            {name: "side-by-side", action: EasyMDE.toggleSideBySide, className: "fa fa-columns no-disable no-mobile", title: "分栏预览"},
+            {name: "fullscreen", action: EasyMDE.toggleFullScreen, className: "fa fa-arrows-alt no-disable no-mobile", title: "全屏"},
+            "|",
+            {name: "save", action: () => saveDoc(path), className: "fa fa-floppy-o", title: "保存 (Ctrl+S)"},
+            {name: "exit", action: () => exitEditMode(path), className: "fa fa-times-circle", title: "退出编辑"},
+        ],
     });
+
+    setTimeout(() => EasyMDE.toggleSideBySide(easyMDE), 100);
 
     easyMDE.codemirror.on("change", () => {
         clearTimeout(autoSaveTimer);
@@ -281,6 +305,8 @@ async function enterEditMode(path) {
 
     document.getElementById("save-btn").addEventListener("click", () => saveDoc(path));
     document.getElementById("done-btn").addEventListener("click", () => exitEditMode(path));
+    document.getElementById("cancel-btn").addEventListener("click", () => cancelEdit(path));
+    document.getElementById("exit-btn").addEventListener("click", () => cancelEdit(path));
 
     document.addEventListener("keydown", editorKeyHandler);
 }
@@ -319,10 +345,22 @@ async function saveDoc(path) {
 
 function exitEditMode(path) {
     document.removeEventListener("keydown", editorKeyHandler);
+    document.body.classList.remove("editing");
     if (easyMDE) {
         easyMDE.toTextArea();
         easyMDE = null;
     }
     clearTimeout(autoSaveTimer);
+    loadDoc(path);
+}
+
+function cancelEdit(path) {
+    document.removeEventListener("keydown", editorKeyHandler);
+    document.body.classList.remove("editing");
+    clearTimeout(autoSaveTimer);
+    if (easyMDE) {
+        easyMDE.toTextArea();
+        easyMDE = null;
+    }
     loadDoc(path);
 }
