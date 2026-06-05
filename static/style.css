@@ -426,11 +426,15 @@ body {
     align-items: center;
     gap: 8px;
     margin-bottom: 12px;
-    padding-bottom: 8px;
+    padding: 8px 0;
     border-bottom: 1px solid #d0d7de;
+    position: sticky;
+    top: 0;
+    background: #fff;
+    z-index: 5;
 }
 
-.edit-btn, .save-btn, .done-btn, .cancel-btn, .exit-btn {
+.edit-btn, .save-btn, .done-btn, .cancel-btn, .exit-btn, .open-file-btn, .open-folder-btn {
     padding: 5px 14px;
     font-size: 13px;
     border-radius: 6px;
@@ -440,7 +444,7 @@ body {
     color: #24292f;
 }
 
-.edit-btn:hover, .done-btn:hover, .cancel-btn:hover, .exit-btn:hover {
+.edit-btn:hover, .done-btn:hover, .cancel-btn:hover, .exit-btn:hover, .open-file-btn:hover, .open-folder-btn:hover {
     background: #eaeef2;
 }
 

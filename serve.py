@@ -3,8 +3,10 @@
 # 公众号: 梦无矶测开实录
 import argparse
 import os
+import platform
 import re
 import socket
+import subprocess
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -108,6 +110,50 @@ async def save(data: dict = Body(...)):
     if not file_path.exists() or not file_path.suffix == ".md":
         return JSONResponse({"error": "not found"}, status_code=404)
     file_path.write_text(content, encoding="utf-8")
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/open-file")
+async def open_file(data: dict = Body(...)):
+    path = data.get("path", "")
+    if not path:
+        return JSONResponse({"error": "path required"}, status_code=400)
+    file_path = (RESULT_DIR / path).resolve()
+    if not str(file_path).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    if not file_path.exists():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        if platform.system() == "Windows":
+            os.startfile(str(file_path))
+        elif platform.system() == "Darwin":
+            subprocess.run(["open", str(file_path)])
+        else:
+            subprocess.run(["xdg-open", str(file_path)])
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/open-folder")
+async def open_folder(data: dict = Body(...)):
+    path = data.get("path", "")
+    if not path:
+        return JSONResponse({"error": "path required"}, status_code=400)
+    file_path = (RESULT_DIR / path).resolve()
+    if not str(file_path).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    if not file_path.exists():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        if platform.system() == "Windows":
+            subprocess.run(["explorer", "/select,", str(file_path)])
+        elif platform.system() == "Darwin":
+            subprocess.run(["open", "-R", str(file_path)])
+        else:
+            subprocess.run(["xdg-open", str(file_path.parent)])
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
     return JSONResponse({"ok": True})
 
 

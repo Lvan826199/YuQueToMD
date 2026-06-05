@@ -61,7 +61,7 @@ async function loadDoc(path, highlight) {
         docContent.innerHTML = `<p style="color:red;">${data.error}</p>`;
         return;
     }
-    docContent.innerHTML = `<div class="doc-toolbar"><button class="edit-btn" id="edit-btn">编辑</button></div>` + data.html;
+    docContent.innerHTML = `<div class="doc-toolbar"><button class="edit-btn" id="edit-btn">编辑</button><button class="open-file-btn" id="open-file-btn">用编辑器打开</button><button class="open-folder-btn" id="open-folder-btn">打开文件夹</button></div>` + data.html;
     document.title = data.title + " - YuQue Docs";
     location.hash = encodeURIComponent(path);
     docContent.querySelectorAll("pre code").forEach((block) => {
@@ -74,6 +74,8 @@ async function loadDoc(path, highlight) {
     contentEl.scrollTop = 0;
     buildOutline();
     document.getElementById("edit-btn").addEventListener("click", () => enterEditMode(path));
+    document.getElementById("open-file-btn").addEventListener("click", () => openLocal(path, "file"));
+    document.getElementById("open-folder-btn").addEventListener("click", () => openLocal(path, "folder"));
     if (highlight) {
         setTimeout(() => scrollToHighlight(highlight), 100);
     }
@@ -363,4 +365,15 @@ function cancelEdit(path) {
         easyMDE = null;
     }
     loadDoc(path);
+}
+
+async function openLocal(path, type) {
+    const endpoint = type === "file" ? "/api/open-file" : "/api/open-folder";
+    try {
+        await fetch(endpoint, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({path}),
+        });
+    } catch {}
 }
