@@ -279,6 +279,12 @@ body {
 .welcome h1 {
     border: none;
     color: #24292f;
+    margin-bottom: 8px;
+}
+
+.welcome-tagline {
+    font-size: 16px;
+    color: #57606a;
     margin-bottom: 16px;
 }
 
