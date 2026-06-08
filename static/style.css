@@ -280,14 +280,21 @@ body {
 
 .welcome {
     text-align: center;
-    margin-top: 15vh;
+    margin-top: 12vh;
     color: #57606a;
 }
 
+.welcome-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 8px;
+}
+
 .welcome-logo {
-    width: 80px;
-    height: 80px;
-    margin-bottom: 16px;
+    width: 56px;
+    height: 56px;
 }
 
 .welcome h1 {

@@ -175,6 +175,11 @@ searchInput.addEventListener("keydown", (e) => {
 
 loadTree();
 
+document.getElementById("home-link").addEventListener("click", () => {
+    location.hash = "";
+    location.reload();
+});
+
 if (location.hash) {
     const path = decodeURIComponent(location.hash.slice(1));
     if (path) loadDoc(path);
