@@ -12,7 +12,7 @@ from pathlib import Path
 
 import mistune
 import uvicorn
-from fastapi import FastAPI, Request, Query, Body
+from fastapi import FastAPI, Request, Query, Body, File, UploadFile, Form
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -157,6 +157,43 @@ async def open_folder(data: dict = Body(...)):
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     return JSONResponse({"ok": True})
+
+
+@app.post("/api/upload-image")
+async def upload_image(file: UploadFile = File(...), doc_path: str = Form(...)):
+    """上传图片到对应文档的 attachments 目录，自动按 {文档名}_{序号}.{扩展名} 命名"""
+    if not doc_path:
+        return JSONResponse({"error": "doc_path required"}, status_code=400)
+    md_file = (RESULT_DIR / doc_path).resolve()
+    if not str(md_file).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+
+    md_dir = md_file.parent
+    doc_stem = md_file.stem
+    attachments_dir = md_dir / "attachments"
+    attachments_dir.mkdir(exist_ok=True)
+
+    ext_map = {"image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif",
+               "image/webp": ".webp", "image/svg+xml": ".svg"}
+    ext = ext_map.get(file.content_type, "")
+    if not ext:
+        name_lower = (file.filename or "").lower()
+        for e in (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"):
+            if name_lower.endswith(e):
+                ext = e
+                break
+        if not ext:
+            ext = ".png"
+
+    existing = list(attachments_dir.glob(doc_stem + "_*"))
+    no = len(existing) + 1
+    file_name = "%s_%03d%s" % (doc_stem, no, ext)
+
+    data = await file.read()
+    (attachments_dir / file_name).write_bytes(data)
+
+    rel_path = "./attachments/" + file_name
+    return JSONResponse({"url": rel_path, "filename": file_name})
 
 
 CN_NUM_MAP = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,

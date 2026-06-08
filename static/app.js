@@ -275,6 +275,20 @@ async function enterEditMode(path) {
         autofocus: true,
         status: false,
         minHeight: "calc(100vh - 160px)",
+        uploadImage: true,
+        imageUploadFunction: (file, onSuccess, onError) => {
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("doc_path", path);
+            fetch("/api/upload-image", { method: "POST", body: formData })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.url) onSuccess(data.url);
+                    else onError(data.error || "上传失败");
+                })
+                .catch(e => onError(e.message));
+        },
+        imageAccept: "image/png, image/jpeg, image/gif, image/webp, image/svg+xml",
         toolbar: [
             {name: "bold", action: EasyMDE.toggleBold, className: "fa fa-bold", title: "加粗"},
             {name: "italic", action: EasyMDE.toggleItalic, className: "fa fa-italic", title: "斜体"},
@@ -286,6 +300,7 @@ async function enterEditMode(path) {
             "|",
             {name: "link", action: EasyMDE.drawLink, className: "fa fa-link", title: "链接"},
             {name: "image", action: EasyMDE.drawImage, className: "fa fa-picture-o", title: "图片"},
+            {name: "upload-image", action: EasyMDE.drawUploadedImage, className: "fa fa-upload", title: "上传图片"},
             {name: "code", action: EasyMDE.toggleCodeBlock, className: "fa fa-code", title: "代码块"},
             {name: "table", action: EasyMDE.drawTable, className: "fa fa-table", title: "表格"},
             "|",
