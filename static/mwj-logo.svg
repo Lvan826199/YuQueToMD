@@ -1,0 +1,20 @@
+<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="20" cy="20" r="20" fill="#dbeafe"/>
+  <path
+    d="M7 30 L7 12 L20 22 L33 12 L33 30"
+    stroke="#1d4ed8"
+    stroke-width="3.5"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+  />
+  <polyline
+    points="4,35 11,35 14,29 18,38 22,26 26,35 36,35"
+    stroke="#1d4ed8"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    fill="none"
+    opacity="0.6"
+  />
+</svg>

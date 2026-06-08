@@ -32,6 +32,14 @@ body {
     font-size: 16px;
     margin-bottom: 10px;
     color: #24292f;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sidebar-logo {
+    width: 28px;
+    height: 28px;
 }
 
 .search-box {
@@ -272,8 +280,14 @@ body {
 
 .welcome {
     text-align: center;
-    margin-top: 20vh;
+    margin-top: 15vh;
     color: #57606a;
+}
+
+.welcome-logo {
+    width: 80px;
+    height: 80px;
+    margin-bottom: 16px;
 }
 
 .welcome h1 {

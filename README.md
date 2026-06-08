@@ -1,8 +1,10 @@
 <div align="center">
 
+<img src="static/mwj-logo.svg" width="80" height="80" alt="MWJ Docs">
+
 # YuQueToMD
 
-**语雀知识库导出 & 本地阅读器**
+**梦无矶的知识库 · 本地阅读器**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![GitHub stars](https://img.shields.io/github/stars/Lvan826199/YuQueToMD?style=flat&logo=github)](https://github.com/Lvan826199/YuQueToMD)
