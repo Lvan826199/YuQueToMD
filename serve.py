@@ -17,8 +17,11 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-BASE_DIR = Path(__file__).parent
-DEFAULT_RESULT_DIR = BASE_DIR / "result"
+import sys
+import webbrowser
+
+BASE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
+DEFAULT_RESULT_DIR = Path(sys.executable).parent / "result" if getattr(sys, 'frozen', False) else BASE_DIR / "result"
 
 RESULT_DIR: Path = DEFAULT_RESULT_DIR
 
@@ -273,4 +276,5 @@ if __name__ == "__main__":
     port = args.port if args.port else find_available_port()
     print(f"Serving docs from: {RESULT_DIR}")
     print(f"Open http://localhost:{port}")
+    webbrowser.open(f"http://localhost:{port}")
     uvicorn.run(app, host="127.0.0.1", port=port)

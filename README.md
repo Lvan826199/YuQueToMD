@@ -160,6 +160,54 @@ uv run python serve.py
 
 ---
 
+## 📦 打包为 EXE（免 Python 环境运行）
+
+可以将文档浏览器打包为单个 exe 文件，在没有 Python 环境的电脑上直接使用。
+
+### 打包步骤
+
+```bash
+uv sync --group dev
+uv run pyinstaller serve.spec --noconfirm
+```
+
+打包完成后在 `dist/` 目录生成 `YuQueDocs.exe`（约 16MB）。
+
+### 使用方式
+
+将以下文件拷贝到目标电脑的同一目录下：
+
+```text
+任意目录/
+├── YuQueDocs.exe
+└── result/
+    ├── 知识库A/
+    ├── 知识库B/
+    └── ...
+```
+
+双击 `YuQueDocs.exe` 即可启动，自动打开浏览器访问文档。
+
+### 命令行参数
+
+```bash
+YuQueDocs.exe --port 9000 --dir ./my_docs
+```
+
+| 参数 | 说明 |
+|------|------|
+| `--port` | 指定端口号（默认自动从 9000 检测） |
+| `--dir` | 指定文档目录（默认 exe 同级的 `result/`） |
+
+### 注意事项
+
+- exe 仅限 Windows 使用，macOS/Linux 需在对应平台重新打包
+- `result/` 目录必须和 exe 在同一目录下（或用 `--dir` 指定路径）
+- 关闭命令行窗口即停止服务
+- 编辑功能（图片上传、保存）在 exe 模式下同样可用
+
+---
+
 ## 🛠️ 开发说明
 
 ```bash
