@@ -15,16 +15,17 @@ let autoSaveTimer = null;
 async function loadTree() {
     const resp = await fetch("/api/tree");
     const data = await resp.json();
-    treeNav.innerHTML = renderTree(data);
+    treeNav.innerHTML = renderTree(data, "");
 }
 
-function renderTree(items) {
+function renderTree(items, parentPath) {
     let html = "";
     for (const item of items) {
         if (item.type === "dir") {
+            const dirPath = parentPath ? parentPath + "/" + item.name : item.name;
             html += `<div class="tree-item tree-dir">
-                <div class="tree-label">${escapeHtml(item.name)}</div>
-                <div class="tree-children">${renderTree(item.children)}</div>
+                <div class="tree-label" data-dir-path="${escapeHtml(dirPath)}">${escapeHtml(item.name)}</div>
+                <div class="tree-children">${renderTree(item.children, dirPath)}</div>
             </div>`;
         } else {
             html += `<div class="tree-item tree-file" data-path="${escapeHtml(item.path)}">${escapeHtml(item.name)}</div>`;
@@ -462,4 +463,120 @@ async function openLocal(path, type) {
             body: JSON.stringify({path}),
         });
     } catch {}
+}
+
+// ── 右键菜单 ──────────────────────────────────────────────
+
+const INVALID_NAME_RE = /[\/\\?*<>|":]/;
+
+function getTargetDir(el) {
+    const dir = el.closest(".tree-dir");
+    if (dir) {
+        const label = dir.querySelector(":scope > .tree-label");
+        return label ? label.dataset.dirPath || "" : "";
+    }
+    const file = el.closest(".tree-file");
+    if (file) {
+        const p = file.dataset.path || "";
+        const idx = p.lastIndexOf("/");
+        return idx >= 0 ? p.substring(0, idx) : "";
+    }
+    return "";
+}
+
+function removeCtxMenu() {
+    const m = document.getElementById("ctx-menu");
+    if (m) m.remove();
+}
+
+function showCtxMenu(x, y, items) {
+    removeCtxMenu();
+    const menu = document.createElement("div");
+    menu.id = "ctx-menu";
+    menu.className = "ctx-menu";
+    items.forEach(({label, action}) => {
+        const item = document.createElement("div");
+        item.className = "ctx-menu-item";
+        item.textContent = label;
+        item.addEventListener("click", () => { removeCtxMenu(); action(); });
+        menu.appendChild(item);
+    });
+    document.body.appendChild(menu);
+    const menuW = 160, menuH = items.length * 32 + 8;
+    const left = x + menuW > window.innerWidth ? x - menuW : x;
+    const top = y + menuH > window.innerHeight ? y - menuH : y;
+    menu.style.left = left + "px";
+    menu.style.top = top + "px";
+}
+
+document.addEventListener("click", removeCtxMenu);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") removeCtxMenu(); });
+
+treeNav.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    const targetDir = getTargetDir(e.target);
+    showCtxMenu(e.clientX, e.clientY, [
+        {label: "📁 新建文件夹", action: () => showCreateDialog("dir", targetDir)},
+        {label: "📄 新建 Markdown 文件", action: () => showCreateDialog("file", targetDir)},
+    ]);
+});
+
+function showCreateDialog(type, targetDir) {
+    if (document.getElementById("create-dialog")) return;
+    const isDir = type === "dir";
+    const title = isDir ? "新建文件夹" : "新建 Markdown 文件";
+    const placeholder = isDir ? "文件夹名称" : "文件名（无需 .md 后缀）";
+
+    const overlay = document.createElement("div");
+    overlay.id = "create-dialog";
+    overlay.className = "dialog-overlay";
+    overlay.innerHTML = `
+        <div class="dialog-box">
+            <div class="dialog-title">${title}</div>
+            <div class="dialog-body">
+                <input type="text" id="create-name-input" class="create-name-input" placeholder="${placeholder}" autocomplete="off">
+                <div class="create-error" id="create-error"></div>
+            </div>
+            <div class="dialog-actions">
+                <button class="dialog-btn dialog-btn-primary" id="create-confirm">确定</button>
+                <button class="dialog-btn dialog-btn-cancel" id="create-cancel">取消</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const input = document.getElementById("create-name-input");
+    const errorEl = document.getElementById("create-error");
+    input.focus();
+
+    async function doCreate() {
+        const name = input.value.trim();
+        if (!name) { errorEl.textContent = "名称不能为空"; return; }
+        if (INVALID_NAME_RE.test(name)) { errorEl.textContent = '名称不能包含 / \\ ? * < > | " :'; return; }
+        const endpoint = isDir ? "/api/create-dir" : "/api/create-file";
+        try {
+            const resp = await fetch(endpoint, {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({dir: targetDir, name}),
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                overlay.remove();
+                await loadTree();
+            } else {
+                errorEl.textContent = data.error === "already exists" ? "同名文件/文件夹已存在" : (data.error || "创建失败");
+            }
+        } catch {
+            errorEl.textContent = "创建失败";
+        }
+    }
+
+    document.getElementById("create-confirm").addEventListener("click", doCreate);
+    document.getElementById("create-cancel").addEventListener("click", () => overlay.remove());
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") doCreate();
+        if (e.key === "Escape") overlay.remove();
+    });
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
 }

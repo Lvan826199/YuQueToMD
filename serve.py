@@ -199,6 +199,46 @@ async def upload_image(file: UploadFile = File(...), doc_path: str = Form(...)):
     return JSONResponse({"url": rel_path, "filename": file_name})
 
 
+@app.post("/api/create-file")
+async def create_file(data: dict = Body(...)):
+    dir_path = data.get("dir", "")
+    name = data.get("name", "").strip()
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    if not name.endswith(".md"):
+        name += ".md"
+    target_dir = (RESULT_DIR / dir_path).resolve() if dir_path else RESULT_DIR.resolve()
+    if not str(target_dir).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    file_path = (target_dir / name).resolve()
+    if not str(file_path).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    if file_path.exists():
+        return JSONResponse({"error": "already exists"}, status_code=400)
+    stem = Path(name).stem
+    file_path.write_text(f"# {stem}\n", encoding="utf-8")
+    rel_path = file_path.relative_to(RESULT_DIR).as_posix()
+    return JSONResponse({"ok": True, "path": rel_path})
+
+
+@app.post("/api/create-dir")
+async def create_dir(data: dict = Body(...)):
+    dir_path = data.get("dir", "")
+    name = data.get("name", "").strip()
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    target_dir = (RESULT_DIR / dir_path).resolve() if dir_path else RESULT_DIR.resolve()
+    if not str(target_dir).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    new_dir = (target_dir / name).resolve()
+    if not str(new_dir).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    if new_dir.exists():
+        return JSONResponse({"error": "already exists"}, status_code=400)
+    new_dir.mkdir(parents=True)
+    return JSONResponse({"ok": True})
+
+
 @app.post("/api/check-orphan-images")
 async def check_orphan_images(data: dict = Body(...)):
     """检查文档 attachments 中未被引用的孤立图片"""
