@@ -70,6 +70,8 @@ def sanitizer_file_name(name):
     name = name.replace("|", "_")
     name = name.replace('"', "_")
     name = name.replace(":", "_")
+    name = name.replace("(", "_")
+    name = name.replace(")", "_")
     name = name.strip(". ")
     if not name:
         return "未命名"
