@@ -81,7 +81,7 @@ async function loadDoc(path, highlight) {
     document.getElementById("open-file-btn").addEventListener("click", () => openLocal(path, "file"));
     document.getElementById("open-folder-btn").addEventListener("click", () => openLocal(path, "folder"));
     if (highlight) {
-        setTimeout(() => scrollToHighlight(highlight), 100);
+        setTimeout(() => scrollToHighlight(highlight), 500);
     }
 }
 
@@ -93,9 +93,13 @@ function scrollToHighlight(keyword) {
         if (node.textContent.toLowerCase().includes(lowerKw)) {
             const el = node.parentElement;
             if (el) {
-                el.scrollIntoView({ behavior: "smooth", block: "center" });
+                const elTop = el.getBoundingClientRect().top;
+                const containerTop = contentEl.getBoundingClientRect().top;
+                contentEl.scrollTop += elTop - containerTop - 100;
+
                 const mark = document.createElement("mark");
                 mark.style.background = "#fff3a8";
+                mark.style.padding = "2px 0";
                 const idx = node.textContent.toLowerCase().indexOf(lowerKw);
                 const range = document.createRange();
                 range.setStart(node, idx);
