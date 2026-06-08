@@ -442,6 +442,133 @@ body {
 .outline-item[data-level="5"] { padding-left: 52px; }
 .outline-item[data-level="6"] { padding-left: 64px; }
 
+.doc-fab-group {
+    position: fixed;
+    top: 50%;
+    left: 316px;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 20;
+}
+
+.fab-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: 1px solid #d0d7de;
+    background: #fff;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    transition: background 0.15s, transform 0.15s;
+}
+
+.fab-btn:hover {
+    background: #dbeafe;
+    transform: scale(1.15);
+}
+
+.dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.dialog-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px;
+    width: 420px;
+    max-width: 90vw;
+    max-height: 70vh;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+    animation: dialogIn 0.2s ease-out;
+}
+
+@keyframes dialogIn {
+    from { transform: scale(0.95); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+.dialog-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: #24292f;
+    margin-bottom: 12px;
+}
+
+.dialog-body {
+    font-size: 14px;
+    color: #57606a;
+    margin-bottom: 20px;
+}
+
+.dialog-body p {
+    margin-bottom: 10px;
+}
+
+.dialog-file-list {
+    max-height: 200px;
+    overflow-y: auto;
+    padding-left: 20px;
+    font-size: 13px;
+    color: #24292f;
+    background: #f6f8fa;
+    border-radius: 6px;
+    padding: 10px 10px 10px 28px;
+}
+
+.dialog-file-list li {
+    margin: 4px 0;
+    word-break: break-all;
+}
+
+.dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.dialog-btn {
+    padding: 8px 18px;
+    font-size: 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+    font-weight: 500;
+}
+
+.dialog-btn-danger {
+    background: #cf222e;
+    color: #fff;
+}
+
+.dialog-btn-danger:hover {
+    background: #a40e26;
+}
+
+.dialog-btn-cancel {
+    background: #f6f8fa;
+    color: #24292f;
+    border: 1px solid #d0d7de;
+}
+
+.dialog-btn-cancel:hover {
+    background: #eaeef2;
+}
+
 .doc-toolbar {
     display: flex;
     align-items: center;

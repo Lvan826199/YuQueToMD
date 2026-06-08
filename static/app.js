@@ -61,7 +61,11 @@ async function loadDoc(path, highlight) {
         docContent.innerHTML = `<p style="color:red;">${data.error}</p>`;
         return;
     }
-    docContent.innerHTML = `<div class="doc-toolbar"><button class="edit-btn" id="edit-btn">编辑</button><button class="open-file-btn" id="open-file-btn">用编辑器打开</button><button class="open-folder-btn" id="open-folder-btn">打开文件夹</button></div>` + data.html;
+    docContent.innerHTML = `<div class="doc-fab-group" id="doc-fab-group">
+        <button class="fab-btn" id="edit-btn" title="编辑">&#9998;</button>
+        <button class="fab-btn" id="open-file-btn" title="用编辑器打开">&#128196;</button>
+        <button class="fab-btn" id="open-folder-btn" title="打开文件夹">&#128193;</button>
+    </div>` + data.html;
     document.title = data.title + " - MWJ Docs";
     location.hash = encodeURIComponent(path);
     docContent.querySelectorAll("pre code").forEach((block) => {
@@ -280,6 +284,13 @@ async function enterEditMode(path) {
         autofocus: true,
         status: false,
         minHeight: "calc(100vh - 160px)",
+        previewRender: (plainText, preview) => {
+            const docDir = path.substring(0, path.lastIndexOf("/"));
+            let html = easyMDE.markdown(plainText);
+            html = html.replace(/src="\.\/attachments\//g, 'src="/files/' + docDir + '/attachments/');
+            html = html.replace(/src="attachments\//g, 'src="/files/' + docDir + '/attachments/');
+            return html;
+        },
         uploadImage: true,
         imageUploadFunction: (file, onSuccess, onError) => {
             const formData = new FormData();
@@ -354,6 +365,7 @@ async function saveDoc(path) {
         if (data.ok) {
             statusEl.textContent = "已保存";
             statusEl.style.color = "#2da44e";
+            checkOrphanImages(path, content);
         } else {
             statusEl.textContent = "保存失败";
             statusEl.style.color = "#cf222e";
@@ -363,6 +375,56 @@ async function saveDoc(path) {
         statusEl.style.color = "#cf222e";
     }
     setTimeout(() => { statusEl.textContent = ""; }, 2000);
+}
+
+async function checkOrphanImages(path, content) {
+    try {
+        const resp = await fetch("/api/check-orphan-images", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({path, content}),
+        });
+        const data = await resp.json();
+        if (data.orphans && data.orphans.length > 0) {
+            showOrphanDialog(path, data.orphans);
+        }
+    } catch {}
+}
+
+function showOrphanDialog(path, orphans) {
+    if (document.getElementById("orphan-dialog")) return;
+
+    const overlay = document.createElement("div");
+    overlay.id = "orphan-dialog";
+    overlay.className = "dialog-overlay";
+    overlay.innerHTML = `
+        <div class="dialog-box">
+            <div class="dialog-title">发现未引用的图片</div>
+            <div class="dialog-body">
+                <p>以下 <strong>${orphans.length}</strong> 张图片不再被文档引用，是否删除？</p>
+                <ul class="dialog-file-list">
+                    ${orphans.map(f => `<li>${f}</li>`).join("")}
+                </ul>
+            </div>
+            <div class="dialog-actions">
+                <button class="dialog-btn dialog-btn-danger" id="orphan-delete">删除</button>
+                <button class="dialog-btn dialog-btn-cancel" id="orphan-ignore">忽略</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById("orphan-delete").addEventListener("click", async () => {
+        await fetch("/api/delete-images", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({path, files: orphans}),
+        });
+        overlay.remove();
+    });
+    document.getElementById("orphan-ignore").addEventListener("click", () => {
+        overlay.remove();
+    });
 }
 
 function exitEditMode(path) {

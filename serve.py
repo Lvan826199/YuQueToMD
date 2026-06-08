@@ -199,6 +199,46 @@ async def upload_image(file: UploadFile = File(...), doc_path: str = Form(...)):
     return JSONResponse({"url": rel_path, "filename": file_name})
 
 
+@app.post("/api/check-orphan-images")
+async def check_orphan_images(data: dict = Body(...)):
+    """检查文档 attachments 中未被引用的孤立图片"""
+    path = data.get("path", "")
+    content = data.get("content", "")
+    if not path:
+        return JSONResponse({"orphans": []})
+    md_file = (RESULT_DIR / path).resolve()
+    if not str(md_file).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"orphans": []})
+    att_dir = md_file.parent / "attachments"
+    if not att_dir.exists():
+        return JSONResponse({"orphans": []})
+    orphans = []
+    for f in att_dir.iterdir():
+        if f.is_file() and f.name not in content and ("./attachments/" + f.name) not in content:
+            orphans.append(f.name)
+    return JSONResponse({"orphans": orphans})
+
+
+@app.post("/api/delete-images")
+async def delete_images(data: dict = Body(...)):
+    """删除指定文档 attachments 目录中的图片"""
+    path = data.get("path", "")
+    files = data.get("files", [])
+    if not path or not files:
+        return JSONResponse({"ok": False})
+    md_file = (RESULT_DIR / path).resolve()
+    if not str(md_file).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    att_dir = md_file.parent / "attachments"
+    deleted = 0
+    for name in files:
+        target = (att_dir / name).resolve()
+        if str(target).startswith(str(att_dir.resolve())) and target.exists():
+            target.unlink()
+            deleted += 1
+    return JSONResponse({"ok": True, "deleted": deleted})
+
+
 CN_NUM_MAP = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
               "十一": 11, "十二": 12, "十三": 13, "十四": 14, "十五": 15, "十六": 16, "十七": 17, "十八": 18, "十九": 19, "二十": 20}
 CN_NUM_RE = re.compile(r'^([一二三四五六七八九十]+)[、.．]')
