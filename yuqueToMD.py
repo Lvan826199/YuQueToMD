@@ -245,6 +245,78 @@ def write_failed_log(output_dir):
     print("\n[WARN] %d images failed, logged to %s" % (len(failed_images), log_path))
 
 
+def verify_and_fix_images(output_dir):
+    """扫描输出目录，修复远程 URL 图片引用（下载到本地并改写路径）"""
+    import re
+    from pathlib import Path
+
+    output_path = Path(output_dir)
+    fixed = 0
+
+    for md_file in output_path.rglob("*.md"):
+        if md_file.name == "FAILED_IMAGES.md":
+            continue
+        content = md_file.read_text(encoding="utf-8", errors="ignore")
+        md_dir = md_file.parent
+        original = content
+
+        remote_refs = re.findall(r'!\[[^\]]*\]\((https?://[^)\s]+)\)', content)
+        for img_url in remote_refs:
+            if not is_likely_image(img_url):
+                continue
+            img_url_fixed = fix_image_url(img_url)
+            attachments_dir = md_dir / "attachments"
+            attachments_dir.mkdir(exist_ok=True)
+            file_name = try_download(img_url_fixed, attachments_dir, md_file.stem)
+            if file_name:
+                content = content.replace(img_url, "./attachments/" + file_name)
+                fixed += 1
+            else:
+                failed_images.append((str(md_file), img_url))
+
+        local_refs = re.findall(r'!\[[^\]]*\]\((\./attachments/[^)\s]+|attachments/[^)\s]+)\)', content)
+        for ref in local_refs:
+            clean = ref.split(" ")[0].strip('"')
+            full = (md_dir / clean).resolve()
+            if not full.exists():
+                failed_images.append((str(md_file), ref))
+
+        if content != original:
+            md_file.write_text(content, encoding="utf-8")
+
+    print("校验完成，修复 %d 个远程图片引用" % fixed)
+
+
+def is_likely_image(url):
+    lower = url.lower().split("?")[0]
+    exts = (".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp")
+    return any(lower.endswith(e) for e in exts) or "image" in lower
+
+
+def try_download(url, target_dir, prefix):
+    for attempt in range(MAX_RETRIES):
+        try:
+            resp = get(url, timeout=30)
+            resp.raise_for_status()
+            content_type = resp.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            ext = content_type_to_extension.get(content_type, "")
+            if not ext:
+                url_path = url.split("?")[0]
+                for e in content_type_to_extension.values():
+                    if url_path.endswith(e):
+                        ext = e
+                        break
+            existing = list(target_dir.glob(prefix + "_*"))
+            no = len(existing) + 1
+            file_name = "%s_%03d%s" % (prefix, no, ext)
+            (target_dir / file_name).write_bytes(resp.content)
+            return file_name
+        except Exception:
+            if attempt < MAX_RETRIES - 1:
+                time.sleep(1)
+    return None
+
+
 def get_code_language(element):
     language = element.get("data-language") or element.get("data-lang")
     if language:
@@ -308,6 +380,10 @@ def main():
         print("Total " + str(len(toc)) + " files")
 
         extract_repos(repo_dir, args.output, toc, args.download_image)
+
+    if args.download_image:
+        print("\n=== 校验图片引用 ===")
+        verify_and_fix_images(args.output)
 
     write_failed_log(args.output)
 

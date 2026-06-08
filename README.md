@@ -152,6 +152,9 @@ uv run python serve.py
 
 - 输出目录不存在时会自动创建
 - 使用 `--download-image` 需要能访问文档中的图片地址
+- 图片下载失败会自动重试 3 次，仍失败则保留远程 URL 并记录到 `FAILED_IMAGES.md`
+- 文件名中的特殊字符（`/ \ ? * < > | " : ( )`）会被替换为 `_`
+- 自动修复语雀 CDN 图片 URL 中重复 `?x-oss-process` 参数的问题
 - 图片响应头无可识别 `Content-Type` 时，本地文件可能没有扩展名
 - `.lakebook` 文件损坏或格式不完整时可能无法转换
 
