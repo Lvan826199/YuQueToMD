@@ -186,9 +186,9 @@ kill -9 <PID>
 
 ---
 
-## 📦 打包为 EXE（免 Python 环境运行）
+## 📦 打包为可执行文件（免 Python 环境运行）
 
-可以将文档浏览器打包为单个 exe 文件，在没有 Python 环境的电脑上直接使用。
+可以将文档浏览器打包为单个可执行文件，在没有 Python 环境的电脑上直接使用。
 
 ### 打包步骤
 
@@ -197,40 +197,69 @@ uv sync --group dev
 uv run pyinstaller serve.spec --noconfirm
 ```
 
-打包完成后在 `dist/` 目录生成 `YuQueDocs.exe`（约 16MB）。
+| 平台 | 产物 | 大小 |
+|------|------|------|
+| Windows | `dist/YuQueDocs.exe` | ~16MB |
+| macOS | `dist/YuQueDocs` | ~20MB |
+
+> 注意：必须在对应平台上执行打包命令，不支持交叉编译。macOS 打包需要在 Mac 上运行。
 
 ### 使用方式
 
-将以下文件拷贝到目标电脑的同一目录下：
+将可执行文件和 `result/` 目录放在同一目录下：
+
+**Windows：**
 
 ```text
 任意目录/
 ├── YuQueDocs.exe
 └── result/
     ├── 知识库A/
-    ├── 知识库B/
     └── ...
 ```
 
-双击 `YuQueDocs.exe` 即可启动，自动打开浏览器访问文档。
+双击 `YuQueDocs.exe` 即可启动。
+
+**macOS：**
+
+```text
+任意目录/
+├── YuQueDocs
+└── result/
+    ├── 知识库A/
+    └── ...
+```
+
+```bash
+# 首次使用需赋予执行权限
+chmod +x YuQueDocs
+# 启动
+./YuQueDocs
+```
+
+如果 macOS 提示「无法打开，因为无法验证开发者」，在系统设置 → 隐私与安全 → 点击「仍要打开」即可。
 
 ### 命令行参数
 
 ```bash
+# Windows
 YuQueDocs.exe --port 9000 --dir ./my_docs
+
+# macOS / Linux
+./YuQueDocs --port 9000 --dir ./my_docs
 ```
 
 | 参数 | 说明 |
 |------|------|
 | `--port` | 指定端口号（默认自动从 9000 检测） |
-| `--dir` | 指定文档目录（默认 exe 同级的 `result/`） |
+| `--dir` | 指定文档目录（默认可执行文件同级的 `result/`） |
 
 ### 注意事项
 
-- exe 仅限 Windows 使用，macOS/Linux 需在对应平台重新打包
-- `result/` 目录必须和 exe 在同一目录下（或用 `--dir` 指定路径）
-- 关闭命令行窗口即停止服务
-- 编辑功能（图片上传、保存）在 exe 模式下同样可用
+- 必须在目标平台上打包（Windows 打包 exe，macOS 打包 macOS 可执行文件）
+- `result/` 目录必须和可执行文件在同一目录下（或用 `--dir` 指定路径）
+- 关闭终端窗口即停止服务
+- 编辑功能（图片上传、保存）在打包模式下同样可用
 
 ---
 
