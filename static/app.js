@@ -469,6 +469,21 @@ async function openLocal(path, type) {
 
 const INVALID_NAME_RE = /[\/\\?*<>|":]/;
 
+function showToast(msg, type) {
+    const existing = document.getElementById("toast-msg");
+    if (existing) existing.remove();
+    const toast = document.createElement("div");
+    toast.id = "toast-msg";
+    toast.className = "toast-msg" + (type === "error" ? " toast-error" : "");
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add("toast-show"));
+    setTimeout(() => {
+        toast.classList.remove("toast-show");
+        setTimeout(() => toast.remove(), 300);
+    }, 2500);
+}
+
 function getTargetDir(el) {
     const dir = el.closest(".tree-dir");
     if (dir) {
@@ -484,6 +499,19 @@ function getTargetDir(el) {
     return "";
 }
 
+function getTargetNode(el) {
+    const file = el.closest(".tree-file");
+    if (file) return {nodeType: "file", path: file.dataset.path || "", name: file.dataset.path.split("/").pop()};
+    const dir = el.closest(".tree-dir");
+    if (dir) {
+        const label = dir.querySelector(":scope > .tree-label");
+        const dirPath = label ? label.dataset.dirPath || "" : "";
+        const name = dirPath.split("/").pop();
+        return {nodeType: "dir", path: dirPath, name};
+    }
+    return null;
+}
+
 function removeCtxMenu() {
     const m = document.getElementById("ctx-menu");
     if (m) m.remove();
@@ -494,15 +522,15 @@ function showCtxMenu(x, y, items) {
     const menu = document.createElement("div");
     menu.id = "ctx-menu";
     menu.className = "ctx-menu";
-    items.forEach(({label, action}) => {
+    items.forEach(({label, action, danger}) => {
         const item = document.createElement("div");
-        item.className = "ctx-menu-item";
+        item.className = "ctx-menu-item" + (danger ? " ctx-menu-item-danger" : "");
         item.textContent = label;
         item.addEventListener("click", () => { removeCtxMenu(); action(); });
         menu.appendChild(item);
     });
     document.body.appendChild(menu);
-    const menuW = 160, menuH = items.length * 32 + 8;
+    const menuW = 180, menuH = items.length * 34 + 8;
     const left = x + menuW > window.innerWidth ? x - menuW : x;
     const top = y + menuH > window.innerHeight ? y - menuH : y;
     menu.style.left = left + "px";
@@ -515,10 +543,16 @@ document.addEventListener("keydown", (e) => { if (e.key === "Escape") removeCtxM
 treeNav.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     const targetDir = getTargetDir(e.target);
-    showCtxMenu(e.clientX, e.clientY, [
+    const targetNode = getTargetNode(e.target);
+    const items = [
         {label: "📁 新建文件夹", action: () => showCreateDialog("dir", targetDir)},
         {label: "📄 新建 Markdown 文件", action: () => showCreateDialog("file", targetDir)},
-    ]);
+    ];
+    if (targetNode) {
+        const label = targetNode.nodeType === "dir" ? `🗑 删除文件夹「${targetNode.name}」` : `🗑 删除文件「${targetNode.name}」`;
+        items.push({label, action: () => showDeleteDialog(targetNode), danger: true});
+    }
+    showCtxMenu(e.clientX, e.clientY, items);
 });
 
 function showCreateDialog(type, targetDir) {
@@ -564,8 +598,10 @@ function showCreateDialog(type, targetDir) {
             if (data.ok) {
                 overlay.remove();
                 await loadTree();
+                showToast(isDir ? `文件夹「${name}」创建成功` : `文件「${name}.md」创建成功`);
             } else {
-                errorEl.textContent = data.error === "already exists" ? "同名文件/文件夹已存在" : (data.error || "创建失败");
+                const msg = data.error === "already exists" ? "同名文件/文件夹已存在" : (data.error || "创建失败");
+                errorEl.textContent = msg;
             }
         } catch {
             errorEl.textContent = "创建失败";
@@ -578,5 +614,56 @@ function showCreateDialog(type, targetDir) {
         if (e.key === "Enter") doCreate();
         if (e.key === "Escape") overlay.remove();
     });
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+}
+
+function showDeleteDialog(node) {
+    if (document.getElementById("delete-dialog")) return;
+    const isDir = node.nodeType === "dir";
+    const label = isDir ? `文件夹「${node.name}」及其所有内容` : `文件「${node.name}」`;
+
+    const overlay = document.createElement("div");
+    overlay.id = "delete-dialog";
+    overlay.className = "dialog-overlay";
+    overlay.innerHTML = `
+        <div class="dialog-box">
+            <div class="dialog-title">确认删除</div>
+            <div class="dialog-body">
+                <p>确定要删除 <strong>${escapeHtml(label)}</strong> 吗？此操作不可撤销。</p>
+            </div>
+            <div class="dialog-actions">
+                <button class="dialog-btn dialog-btn-danger" id="delete-confirm">删除</button>
+                <button class="dialog-btn dialog-btn-cancel" id="delete-cancel">取消</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById("delete-confirm").addEventListener("click", async () => {
+        try {
+            const resp = await fetch("/api/delete-node", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({path: node.path}),
+            });
+            const data = await resp.json();
+            overlay.remove();
+            if (data.ok) {
+                if (currentDocPath && (currentDocPath === node.path || currentDocPath.startsWith(node.path + "/"))) {
+                    currentDocPath = null;
+                    docContent.innerHTML = "";
+                    outlineNav.innerHTML = "";
+                }
+                await loadTree();
+                showToast(`${isDir ? "文件夹" : "文件"}「${node.name}」已删除`);
+            } else {
+                showToast(data.error || "删除失败", "error");
+            }
+        } catch {
+            overlay.remove();
+            showToast("删除失败", "error");
+        }
+    });
+    document.getElementById("delete-cancel").addEventListener("click", () => overlay.remove());
     overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
 }

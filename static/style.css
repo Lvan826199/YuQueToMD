@@ -687,6 +687,42 @@ body.editing .markdown-body {
     color: #0969da;
 }
 
+.ctx-menu-item-danger {
+    color: #cf222e;
+}
+
+.ctx-menu-item-danger:hover {
+    background: #ffebe9;
+    color: #cf222e;
+}
+
+/* Toast 提示 */
+.toast-msg {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    background: #24292f;
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    z-index: 99999;
+    opacity: 0;
+    transition: opacity 0.2s, transform 0.2s;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.toast-msg.toast-show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
+.toast-msg.toast-error {
+    background: #cf222e;
+}
+
 /* 新建名称输入框 */
 .create-name-input {
     width: 100%;

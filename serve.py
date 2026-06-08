@@ -239,6 +239,28 @@ async def create_dir(data: dict = Body(...)):
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/delete-node")
+async def delete_node(data: dict = Body(...)):
+    """删除文件或文件夹（文件夹递归删除）"""
+    path = data.get("path", "")
+    if not path:
+        return JSONResponse({"error": "path required"}, status_code=400)
+    target = (RESULT_DIR / path).resolve()
+    if not str(target).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    if not target.exists():
+        return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        if target.is_dir():
+            import shutil
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    return JSONResponse({"ok": True})
+
+
 @app.post("/api/check-orphan-images")
 async def check_orphan_images(data: dict = Body(...)):
     """检查文档 attachments 中未被引用的孤立图片"""
@@ -307,12 +329,11 @@ def build_tree(dir_path: Path) -> list:
             continue
         if entry.is_dir():
             children = build_tree(entry)
-            if children:
-                items.append({
-                    "name": entry.name,
-                    "type": "dir",
-                    "children": children,
-                })
+            items.append({
+                "name": entry.name,
+                "type": "dir",
+                "children": children,
+            })
         elif entry.suffix == ".md":
             rel_path = entry.relative_to(RESULT_DIR).as_posix()
             items.append({
