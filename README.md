@@ -199,8 +199,8 @@ uv run pyinstaller serve.spec --noconfirm
 
 | 平台 | 产物 | 大小 |
 |------|------|------|
-| Windows | `dist/YuQueDocs.exe` | ~16MB |
-| macOS | `dist/YuQueDocs` | ~20MB |
+| Windows | `dist/MWJDocs.exe` | ~16MB |
+| macOS | `dist/MWJDocs` | ~20MB |
 
 > 注意：必须在对应平台上执行打包命令，不支持交叉编译。macOS 打包需要在 Mac 上运行。
 
@@ -212,19 +212,19 @@ uv run pyinstaller serve.spec --noconfirm
 
 ```text
 任意目录/
-├── YuQueDocs.exe
+├── MWJDocs.exe
 └── result/
     ├── 知识库A/
     └── ...
 ```
 
-双击 `YuQueDocs.exe` 即可启动。
+双击 `MWJDocs.exe` 即可启动。
 
 **macOS：**
 
 ```text
 任意目录/
-├── YuQueDocs
+├── MWJDocs
 └── result/
     ├── 知识库A/
     └── ...
@@ -232,9 +232,9 @@ uv run pyinstaller serve.spec --noconfirm
 
 ```bash
 # 首次使用需赋予执行权限
-chmod +x YuQueDocs
+chmod +x MWJDocs
 # 启动
-./YuQueDocs
+./MWJDocs
 ```
 
 如果 macOS 提示「无法打开，因为无法验证开发者」，在系统设置 → 隐私与安全 → 点击「仍要打开」即可。
@@ -243,10 +243,10 @@ chmod +x YuQueDocs
 
 ```bash
 # Windows
-YuQueDocs.exe --port 9000 --dir ./my_docs
+MWJDocs.exe --port 9000 --dir ./my_docs
 
 # macOS / Linux
-./YuQueDocs --port 9000 --dir ./my_docs
+./MWJDocs --port 9000 --dir ./my_docs
 ```
 
 | 参数 | 说明 |

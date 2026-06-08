@@ -62,7 +62,7 @@ async function loadDoc(path, highlight) {
         return;
     }
     docContent.innerHTML = `<div class="doc-toolbar"><button class="edit-btn" id="edit-btn">编辑</button><button class="open-file-btn" id="open-file-btn">用编辑器打开</button><button class="open-folder-btn" id="open-folder-btn">打开文件夹</button></div>` + data.html;
-    document.title = data.title + " - YuQue Docs";
+    document.title = data.title + " - MWJ Docs";
     location.hash = encodeURIComponent(path);
     docContent.querySelectorAll("pre code").forEach((block) => {
         if (block.className === "language-plain") {
