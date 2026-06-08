@@ -115,6 +115,7 @@ async def save(data: dict = Body(...)):
 
 @app.post("/api/open-file")
 async def open_file(data: dict = Body(...)):
+    """用系统默认编辑器打开 MD 文件（跨平台：Windows/macOS/Linux）"""
     path = data.get("path", "")
     if not path:
         return JSONResponse({"error": "path required"}, status_code=400)
@@ -126,9 +127,9 @@ async def open_file(data: dict = Body(...)):
     try:
         if platform.system() == "Windows":
             os.startfile(str(file_path))
-        elif platform.system() == "Darwin":
+        elif platform.system() == "Darwin":  # macOS
             subprocess.run(["open", str(file_path)])
-        else:
+        else:  # Linux
             subprocess.run(["xdg-open", str(file_path)])
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
@@ -137,6 +138,7 @@ async def open_file(data: dict = Body(...)):
 
 @app.post("/api/open-folder")
 async def open_folder(data: dict = Body(...)):
+    """在文件管理器中打开文件所在目录并选中文件（跨平台：Windows/macOS/Linux）"""
     path = data.get("path", "")
     if not path:
         return JSONResponse({"error": "path required"}, status_code=400)
@@ -148,9 +150,9 @@ async def open_folder(data: dict = Body(...)):
     try:
         if platform.system() == "Windows":
             subprocess.run(["explorer", "/select,", str(file_path)])
-        elif platform.system() == "Darwin":
+        elif platform.system() == "Darwin":  # macOS
             subprocess.run(["open", "-R", str(file_path)])
-        else:
+        else:  # Linux
             subprocess.run(["xdg-open", str(file_path.parent)])
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
