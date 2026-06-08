@@ -246,7 +246,11 @@ def write_failed_log(output_dir):
 
 
 def verify_and_fix_images(output_dir):
-    """扫描输出目录，修复远程 URL 图片引用（下载到本地并改写路径）"""
+    """
+    扫描输出目录，修复远程 URL 图片引用（下载到本地并改写路径）。
+    忽略本地路径引用（images/、.assets/、绝对路径等），这些通常是用户
+    从本地复制内容到语雀时产生的无效引用，lakebook 中不包含这些图片。
+    """
     import re
     from pathlib import Path
 
@@ -260,6 +264,7 @@ def verify_and_fix_images(output_dir):
         md_dir = md_file.parent
         original = content
 
+        # 只处理远程 URL 图片引用
         remote_refs = re.findall(r'!\[[^\]]*\]\((https?://[^)\s]+)\)', content)
         for img_url in remote_refs:
             if not is_likely_image(img_url):
@@ -272,8 +277,10 @@ def verify_and_fix_images(output_dir):
                 content = content.replace(img_url, "./attachments/" + file_name)
                 fixed += 1
             else:
+                # 远程 URL 下载失败，保留原始链接，记录到失败日志
                 failed_images.append((str(md_file), img_url))
 
+        # 只校验 attachments 路径（由本工具生成的），忽略 images/、.assets/ 等用户本地路径
         local_refs = re.findall(r'!\[[^\]]*\]\((\./attachments/[^)\s]+|attachments/[^)\s]+)\)', content)
         for ref in local_refs:
             clean = ref.split(" ")[0].strip('"')
