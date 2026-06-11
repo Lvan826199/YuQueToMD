@@ -758,3 +758,196 @@ body.editing .markdown-body {
 .dialog-btn-primary:hover {
     background: #2c974b;
 }
+
+/* 文件类型图标 */
+.tree-file::before {
+    display: inline-block;
+    width: 16px;
+    margin-right: 4px;
+    text-align: center;
+    font-size: 12px;
+}
+
+.tree-file-md::before { content: "📝"; }
+.tree-file-image::before { content: "🖼"; }
+.tree-file-pdf::before { content: "📕"; }
+.tree-file-text::before { content: "📄"; }
+.tree-file-other::before { content: "📎"; }
+
+/* 图片预览 */
+.preview-image {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    min-height: 60vh;
+}
+
+.preview-image img {
+    max-width: 100%;
+    max-height: 70vh;
+    border-radius: 8px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    object-fit: contain;
+}
+
+.preview-image .preview-filename {
+    margin-top: 16px;
+    font-size: 14px;
+    color: #57606a;
+}
+
+/* PDF 预览 */
+.preview-pdf {
+    width: 100%;
+    height: calc(100vh - 80px);
+    display: flex;
+    flex-direction: column;
+}
+
+.preview-pdf iframe {
+    flex: 1;
+    width: 100%;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+}
+
+.preview-pdf .preview-fallback {
+    text-align: center;
+    padding: 16px;
+    font-size: 14px;
+    color: #57606a;
+}
+
+/* 文本预览 */
+.preview-text {
+    position: relative;
+}
+
+.preview-text pre {
+    background: #282c34;
+    border-radius: 6px;
+    padding: 16px;
+    overflow-x: auto;
+    margin: 0;
+    color: #abb2bf;
+}
+
+.preview-text .preview-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #d0d7de;
+}
+
+.preview-text .preview-filename {
+    font-size: 14px;
+    font-weight: 500;
+    color: #24292f;
+}
+
+/* 不支持格式的提示卡片 */
+.preview-unsupported {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 40vh;
+    padding: 48px 16px;
+    text-align: center;
+}
+
+.preview-unsupported .preview-icon {
+    font-size: 64px;
+    margin-bottom: 16px;
+    opacity: 0.6;
+}
+
+.preview-unsupported .preview-filename {
+    font-size: 18px;
+    font-weight: 600;
+    color: #24292f;
+    margin-bottom: 8px;
+}
+
+.preview-unsupported .preview-hint {
+    font-size: 14px;
+    color: #57606a;
+    margin-bottom: 24px;
+}
+
+/* 通用预览按钮 */
+.preview-open-btn {
+    padding: 8px 20px;
+    font-size: 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: 1px solid #d0d7de;
+    background: #f6f8fa;
+    color: #24292f;
+    transition: background 0.15s;
+}
+
+.preview-open-btn:hover {
+    background: #eaeef2;
+}
+
+/* 目录选择界面 */
+.dir-selector {
+    max-width: 600px;
+    margin: 32px auto 0;
+    padding: 0 16px;
+}
+
+.dir-selector h2 {
+    font-size: 18px;
+    color: #24292f;
+    margin-bottom: 8px;
+}
+
+.dir-selector .dir-hint {
+    font-size: 14px;
+    color: #57606a;
+    margin-bottom: 20px;
+}
+
+.dir-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+.dir-card {
+    padding: 20px;
+    border: 1px solid #d0d7de;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+    background: #fff;
+}
+
+.dir-card:hover {
+    border-color: #0969da;
+    box-shadow: 0 4px 12px rgba(9, 105, 218, 0.15);
+    transform: translateY(-2px);
+}
+
+.dir-card.active {
+    border-color: #2da44e;
+    background: #f0fff4;
+}
+
+.dir-card .dir-name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #24292f;
+    margin-bottom: 6px;
+}
+
+.dir-card .dir-count {
+    font-size: 13px;
+    color: #57606a;
+}

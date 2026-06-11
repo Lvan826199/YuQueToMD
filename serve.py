@@ -21,9 +21,61 @@ import sys
 import webbrowser
 
 BASE_DIR = Path(getattr(sys, '_MEIPASS', Path(__file__).parent))
-DEFAULT_RESULT_DIR = Path(sys.executable).parent / "result" if getattr(sys, 'frozen', False) else BASE_DIR / "result"
+EXE_DIR = Path(sys.executable).parent if getattr(sys, 'frozen', False) else BASE_DIR
 
-RESULT_DIR: Path = DEFAULT_RESULT_DIR
+SKIP_DIRS = {"_internal", "static", "templates", "__pycache__", "build", "dist", ".venv", "plan", "doc"}
+
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico"}
+PDF_EXTS = {".pdf"}
+TEXT_EXTS = {".txt", ".json", ".yaml", ".yml", ".toml", ".xml", ".csv", ".log", ".ini", ".conf",
+             ".sh", ".bat", ".py", ".js", ".ts", ".go", ".java", ".c", ".cpp", ".h", ".rs",
+             ".html", ".css", ".sql", ".r", ".lua", ".rb", ".kt", ".swift", ".dart"}
+MD_EXTS = {".md"}
+
+
+def classify_file(suffix: str) -> str:
+    s = suffix.lower()
+    if s in MD_EXTS:
+        return "markdown"
+    if s in IMAGE_EXTS:
+        return "image"
+    if s in PDF_EXTS:
+        return "pdf"
+    if s in TEXT_EXTS:
+        return "text"
+    return "other"
+
+
+def discover_dirs() -> list[Path]:
+    candidates = []
+    try:
+        for entry in EXE_DIR.iterdir():
+            if not entry.is_dir():
+                continue
+            if entry.name.startswith(".") or entry.name in SKIP_DIRS:
+                continue
+            candidates.append(entry)
+    except PermissionError:
+        pass
+    return sorted(candidates, key=lambda d: d.name.lower())
+
+
+def get_default_result_dir() -> Path:
+    candidates = discover_dirs()
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        default = EXE_DIR / "docs"
+        default.mkdir(exist_ok=True)
+        return default
+    for c in candidates:
+        if c.name == "result":
+            return c
+    return candidates[0]
+
+
+RESULT_DIR: Path = get_default_result_dir()
+MULTI_DIR_MODE: bool = len(discover_dirs()) > 1
 
 
 @asynccontextmanager
@@ -69,21 +121,27 @@ async def doc(path: str = Query(...)):
 async def search(q: str = Query(..., min_length=1)):
     results = []
     keyword = q.lower()
-    for md_file in RESULT_DIR.rglob("*.md"):
+    searchable_exts = MD_EXTS | TEXT_EXTS
+    for f in RESULT_DIR.rglob("*"):
+        if not f.is_file() or f.suffix.lower() not in searchable_exts:
+            continue
+        if f.parent.name == "attachments":
+            continue
         try:
-            content = md_file.read_text(encoding="utf-8")
+            content = f.read_text(encoding="utf-8")
         except Exception:
             continue
         if keyword in content.lower():
-            rel_path = md_file.relative_to(RESULT_DIR).as_posix()
+            rel_path = f.relative_to(RESULT_DIR).as_posix()
             idx = content.lower().index(keyword)
             start = max(0, idx - 40)
             end = min(len(content), idx + len(q) + 60)
             snippet = content[start:end].replace("\n", " ")
             results.append({
                 "path": rel_path,
-                "title": md_file.stem,
+                "title": f.stem,
                 "snippet": snippet,
+                "file_type": classify_file(f.suffix),
             })
         if len(results) >= 50:
             break
@@ -301,6 +359,73 @@ async def delete_images(data: dict = Body(...)):
     return JSONResponse({"ok": True, "deleted": deleted})
 
 
+@app.get("/api/dirs")
+async def list_dirs():
+    candidates = discover_dirs()
+    result = []
+    for d in candidates:
+        file_count = sum(1 for _ in d.rglob("*") if _.is_file())
+        result.append({"name": d.name, "file_count": file_count, "active": d == RESULT_DIR})
+    return JSONResponse({"dirs": result, "multi": len(candidates) > 1})
+
+
+@app.post("/api/set-dir")
+async def set_dir(data: dict = Body(...)):
+    global RESULT_DIR
+    name = data.get("name", "")
+    if not name:
+        return JSONResponse({"error": "name required"}, status_code=400)
+    target = (EXE_DIR / name).resolve()
+    if not target.is_dir() or not str(target).startswith(str(EXE_DIR.resolve())):
+        return JSONResponse({"error": "invalid dir"}, status_code=400)
+    RESULT_DIR = target
+    app.routes[:] = [r for r in app.routes if getattr(r, "name", None) != "files"]
+    app.mount("/files", StaticFiles(directory=str(RESULT_DIR)), name="files")
+    return JSONResponse({"ok": True, "dir": name})
+
+
+@app.get("/api/file-preview")
+async def file_preview(path: str = Query(...)):
+    file_path = (RESULT_DIR / path).resolve()
+    if not str(file_path).startswith(str(RESULT_DIR.resolve())):
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    if not file_path.exists() or file_path.is_dir():
+        return JSONResponse({"error": "not found"}, status_code=404)
+
+    file_type = classify_file(file_path.suffix)
+    name = file_path.name
+    file_url = "/files/" + Path(path).as_posix()
+
+    if file_type == "markdown":
+        content = file_path.read_text(encoding="utf-8")
+        html = mistune.html(content)
+        doc_dir = Path(path).parent.as_posix()
+        html = rewrite_image_paths(html, doc_dir)
+        return JSONResponse({"type": "markdown", "html": html, "title": file_path.stem, "name": name})
+
+    if file_type == "image":
+        return JSONResponse({"type": "image", "url": file_url, "name": name})
+
+    if file_type == "pdf":
+        return JSONResponse({"type": "pdf", "url": file_url, "name": name})
+
+    if file_type == "text":
+        try:
+            content = file_path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, Exception):
+            return JSONResponse({"type": "other", "name": name})
+        lang_map = {".py": "python", ".js": "javascript", ".ts": "typescript", ".go": "go",
+                    ".java": "java", ".json": "json", ".yaml": "yaml", ".yml": "yaml",
+                    ".xml": "xml", ".html": "xml", ".css": "css", ".sql": "sql",
+                    ".sh": "bash", ".bat": "bash", ".toml": "ini", ".ini": "ini",
+                    ".rs": "rust", ".c": "c", ".cpp": "cpp", ".h": "c",
+                    ".rb": "ruby", ".lua": "lua", ".kt": "kotlin", ".swift": "swift", ".dart": "dart"}
+        lang = lang_map.get(file_path.suffix.lower(), "")
+        return JSONResponse({"type": "text", "content": content, "name": name, "lang": lang})
+
+    return JSONResponse({"type": "other", "name": name})
+
+
 CN_NUM_MAP = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
               "十一": 11, "十二": 12, "十三": 13, "十四": 14, "十五": 15, "十六": 16, "十七": 17, "十八": 18, "十九": 19, "二十": 20}
 CN_NUM_RE = re.compile(r'^([一二三四五六七八九十]+)[、.．]')
@@ -334,11 +459,14 @@ def build_tree(dir_path: Path) -> list:
                 "type": "dir",
                 "children": children,
             })
-        elif entry.suffix == ".md":
+        else:
+            file_type = classify_file(entry.suffix)
             rel_path = entry.relative_to(RESULT_DIR).as_posix()
+            display_name = entry.stem if file_type == "markdown" else entry.name
             items.append({
-                "name": entry.stem,
+                "name": display_name,
                 "type": "file",
+                "file_type": file_type,
                 "path": rel_path,
             })
     return items
@@ -366,13 +494,14 @@ def find_available_port(start: int = 9000) -> int:
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Serve markdown docs locally")
     parser.add_argument("--port", type=int, default=0, help="Port (default: auto from 9000)")
-    parser.add_argument("--dir", type=str, default=str(DEFAULT_RESULT_DIR), help="Docs directory")
+    parser.add_argument("--dir", type=str, default="", help="Docs directory")
     args = parser.parse_args()
 
-    RESULT_DIR = Path(args.dir).resolve()
-    if not RESULT_DIR.exists():
-        print(f"Directory not found: {RESULT_DIR}")
-        raise SystemExit(1)
+    if args.dir:
+        RESULT_DIR = Path(args.dir).resolve()
+        if not RESULT_DIR.exists():
+            print(f"Directory not found: {RESULT_DIR}")
+            raise SystemExit(1)
 
     port = args.port if args.port else find_available_port()
     print(f"Serving docs from: {RESULT_DIR}")

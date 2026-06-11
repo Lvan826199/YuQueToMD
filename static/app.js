@@ -18,6 +18,52 @@ async function loadTree() {
     treeNav.innerHTML = renderTree(data, "");
 }
 
+async function checkMultiDir() {
+    const resp = await fetch("/api/dirs");
+    const data = await resp.json();
+    if (data.multi && !location.hash && docContent.querySelector(".welcome")) {
+        showDirSelector(data.dirs);
+    }
+}
+
+function showDirSelector(dirs) {
+    const cards = dirs.map(d => `
+        <div class="dir-card${d.active ? " active" : ""}" data-dir="${escapeHtml(d.name)}">
+            <div class="dir-name">${escapeHtml(d.name)}</div>
+            <div class="dir-count">${d.file_count} 个文件</div>
+        </div>
+    `).join("");
+    docContent.innerHTML = `
+        <div class="welcome">
+            <div class="welcome-brand">
+                <img src="/static/mwj-logo.svg" class="welcome-logo" alt="MWJ Docs">
+                <h1>MWJ Docs</h1>
+            </div>
+            <p class="welcome-tagline">梦无矶的知识库 · 本地阅读器</p>
+            <div class="dir-selector">
+                <h2>选择文档目录</h2>
+                <p class="dir-hint">检测到多个目录，请选择要加载的文档目录：</p>
+                <div class="dir-cards">${cards}</div>
+            </div>
+        </div>`;
+    docContent.querySelectorAll(".dir-card").forEach(card => {
+        card.addEventListener("click", async () => {
+            const name = card.dataset.dir;
+            const resp = await fetch("/api/set-dir", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({name}),
+            });
+            const result = await resp.json();
+            if (result.ok) {
+                await loadTree();
+                docContent.innerHTML = `<div class="welcome"><p style="margin-top:20vh;">已切换到「${escapeHtml(name)}」目录，从左侧选择文档开始阅读。</p></div>`;
+                showToast(`已加载「${name}」目录`);
+            }
+        });
+    });
+}
+
 function renderTree(items, parentPath) {
     let html = "";
     for (const item of items) {
@@ -28,7 +74,8 @@ function renderTree(items, parentPath) {
                 <div class="tree-children">${renderTree(item.children, dirPath)}</div>
             </div>`;
         } else {
-            html += `<div class="tree-item tree-file" data-path="${escapeHtml(item.path)}">${escapeHtml(item.name)}</div>`;
+            const ft = item.file_type || "markdown";
+            html += `<div class="tree-item tree-file tree-file-${ft}" data-path="${escapeHtml(item.path)}" data-file-type="${ft}">${escapeHtml(item.name)}</div>`;
         }
     }
     return html;
@@ -48,7 +95,8 @@ treeNav.addEventListener("click", (e) => {
     }
     const file = e.target.closest(".tree-file");
     if (file) {
-        loadDoc(file.dataset.path);
+        const fileType = file.dataset.fileType || "markdown";
+        loadFile(file.dataset.path, fileType);
         document.querySelectorAll(".tree-file.active").forEach(el => el.classList.remove("active"));
         file.classList.add("active");
     }
@@ -84,6 +132,64 @@ async function loadDoc(path, highlight) {
     if (highlight) {
         setTimeout(() => scrollToHighlight(highlight), 500);
     }
+}
+
+async function loadFile(path, fileType, highlight) {
+    if (fileType === "markdown") {
+        loadDoc(path, highlight);
+        return;
+    }
+    currentDocPath = path;
+    location.hash = encodeURIComponent(path);
+    outlineNav.innerHTML = '<div style="padding:8px;color:#57606a;font-size:12px;">无大纲</div>';
+
+    const resp = await fetch(`/api/file-preview?path=${encodeURIComponent(path)}`);
+    const data = await resp.json();
+    if (data.error) {
+        docContent.innerHTML = `<p style="color:red;">${data.error}</p>`;
+        return;
+    }
+
+    if (data.type === "image") {
+        docContent.innerHTML = `<div class="preview-image">
+            <img src="${escapeHtml(data.url)}" alt="${escapeHtml(data.name)}">
+            <div class="preview-filename">${escapeHtml(data.name)}</div>
+            <button class="preview-open-btn" style="margin-top:16px;" onclick="openLocal('${escapeAttr(path)}', 'file')">用系统默认程序打开</button>
+        </div>`;
+        document.title = data.name + " - MWJ Docs";
+    } else if (data.type === "pdf") {
+        docContent.innerHTML = `<div class="preview-pdf">
+            <iframe src="${escapeHtml(data.url)}" title="${escapeHtml(data.name)}"></iframe>
+            <div class="preview-fallback">
+                如果 PDF 无法显示：<button class="preview-open-btn" onclick="openLocal('${escapeAttr(path)}', 'file')">用系统默认程序打开</button>
+            </div>
+        </div>`;
+        document.title = data.name + " - MWJ Docs";
+    } else if (data.type === "text") {
+        const lang = data.lang ? ` class="language-${data.lang}"` : "";
+        docContent.innerHTML = `<div class="preview-text">
+            <div class="preview-toolbar">
+                <span class="preview-filename">${escapeHtml(data.name)}</span>
+                <button class="preview-open-btn" onclick="openLocal('${escapeAttr(path)}', 'file')">用编辑器打开</button>
+            </div>
+            <pre><code${lang}>${escapeHtml(data.content)}</code></pre>
+        </div>`;
+        docContent.querySelectorAll("pre code").forEach(block => hljs.highlightElement(block));
+        document.title = data.name + " - MWJ Docs";
+    } else {
+        docContent.innerHTML = `<div class="preview-unsupported">
+            <div class="preview-icon">📎</div>
+            <div class="preview-filename">${escapeHtml(data.name)}</div>
+            <div class="preview-hint">此文件格式不支持在线预览</div>
+            <button class="preview-open-btn" onclick="openLocal('${escapeAttr(path)}', 'file')">用系统默认程序打开</button>
+        </div>`;
+        document.title = data.name + " - MWJ Docs";
+    }
+    contentEl.scrollTop = 0;
+}
+
+function escapeAttr(str) {
+    return str.replace(/'/g, "\\'").replace(/\\/g, "\\\\");
 }
 
 function scrollToHighlight(keyword) {
@@ -156,7 +262,7 @@ async function doSearch(q) {
         searchResults.innerHTML = `<div style="padding:12px;color:#57606a;">未找到匹配内容</div>`;
     } else {
         searchResults.innerHTML = results.map(r => `
-            <div class="search-item" data-path="${escapeHtml(r.path)}">
+            <div class="search-item" data-path="${escapeHtml(r.path)}" data-file-type="${r.file_type || 'markdown'}">
                 <div class="title">${escapeHtml(r.title)}</div>
                 <div class="snippet">${escapeHtml(r.snippet)}</div>
             </div>
@@ -169,7 +275,8 @@ async function doSearch(q) {
 searchResults.addEventListener("click", (e) => {
     const item = e.target.closest(".search-item");
     if (item) {
-        loadDoc(item.dataset.path, searchInput.value.trim());
+        const fileType = item.dataset.fileType || "markdown";
+        loadFile(item.dataset.path, fileType, searchInput.value.trim());
     }
 });
 
@@ -183,6 +290,7 @@ searchInput.addEventListener("keydown", (e) => {
 });
 
 loadTree();
+checkMultiDir();
 
 document.getElementById("home-link").addEventListener("click", () => {
     location.hash = "";
@@ -191,7 +299,18 @@ document.getElementById("home-link").addEventListener("click", () => {
 
 if (location.hash) {
     const path = decodeURIComponent(location.hash.slice(1));
-    if (path) loadDoc(path);
+    if (path) {
+        const ext = path.includes(".") ? path.substring(path.lastIndexOf(".")).toLowerCase() : "";
+        const IMAGE_EXTS = [".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico"];
+        const PDF_EXTS = [".pdf"];
+        const MD_EXTS = [".md"];
+        let ft = "other";
+        if (MD_EXTS.includes(ext)) ft = "markdown";
+        else if (IMAGE_EXTS.includes(ext)) ft = "image";
+        else if (PDF_EXTS.includes(ext)) ft = "pdf";
+        else if (ext === ".txt" || ext === ".json" || ext === ".yaml" || ext === ".yml" || ext === ".toml" || ext === ".xml" || ext === ".csv" || ext === ".log" || ext === ".py" || ext === ".js" || ext === ".ts" || ext === ".go" || ext === ".java" || ext === ".sh") ft = "text";
+        loadFile(path, ft);
+    }
 }
 
 function buildOutline() {
