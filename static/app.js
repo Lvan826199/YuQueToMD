@@ -57,7 +57,40 @@ function showDirSelector(dirs) {
             const result = await resp.json();
             if (result.ok) {
                 await loadTree();
-                docContent.innerHTML = `<div class="welcome"><p style="margin-top:20vh;">已切换到「${escapeHtml(name)}」目录，从左侧选择文档开始阅读。</p></div>`;
+                docContent.innerHTML = `<div class="welcome">
+                    <div class="welcome-brand">
+                        <img src="/static/mwj-logo.svg" class="welcome-logo" alt="MWJ Docs">
+                        <h1>MWJ Docs</h1>
+                    </div>
+                    <p class="welcome-tagline">梦无矶的知识库 · 本地阅读器</p>
+                    <p class="welcome-author">梦无矶</p>
+                    <p class="welcome-desc">公众号: 梦无矶测开实录</p>
+                    <p class="welcome-links">
+                        <a href="https://github.com/Lvan826199/YuQueToMD" target="_blank">GitHub</a>
+                        <span class="link-sep">|</span>
+                        <a href="https://gitee.com/xiaozai-van-liu/YuQueToMD" target="_blank">Gitee</a>
+                    </p>
+                    <div class="welcome-features">
+                        <h3>功能特性</h3>
+                        <ul>
+                            <li>语雀 .lakebook 批量转换为 Markdown</li>
+                            <li>按知识库目录层级生成输出</li>
+                            <li>可选下载远程图片到本地</li>
+                            <li>树形目录导航，中文数字自然排序</li>
+                            <li>右侧文档大纲，滚动自动高亮当前章节</li>
+                            <li>全文搜索，关键词高亮定位跳转</li>
+                            <li>代码块深色主题 + 语法高亮 + 一键复制</li>
+                            <li>在线编辑 Markdown，实时预览，自动保存</li>
+                            <li>目录树右键菜单，新建文件夹 / Markdown 文件 / 删除（二次确认）</li>
+                            <li>操作成功/失败 Toast 提示</li>
+                            <li>刷新页面保持当前阅读位置</li>
+                            <li>所有前端资源本地化，无需外网</li>
+                            <li>支持预览图片、PDF、纯文本等多种格式</li>
+                            <li>exe 通用加载，放到任意文档目录旁即可使用</li>
+                        </ul>
+                    </div>
+                    <p class="welcome-hint">从左侧目录选择文档开始阅读，或使用搜索框查找内容。</p>
+                </div>`;
                 showToast(`已加载「${name}」目录`);
             }
         });
