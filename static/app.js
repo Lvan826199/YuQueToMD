@@ -361,6 +361,13 @@ function buildOutline() {
         html += `<a class="outline-item" data-level="${level}" data-id="${id}" title="${escapeHtml(text)}">${escapeHtml(text)}</a>`;
     });
     outlineNav.innerHTML = html;
+    if (headings.length > 0) {
+        const firstItem = outlineNav.querySelector(".outline-item");
+        if (firstItem) {
+            firstItem.classList.add("active");
+            firstItem.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+    }
 }
 
 outlineNav.addEventListener("click", (e) => {
