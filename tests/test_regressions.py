@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from release_config import release_exe_name
 import serve
 import yuqueToMD
 from version import __version__
@@ -182,10 +183,13 @@ class VersionMetadataTests(unittest.TestCase):
         pyproject = (project_root / "pyproject.toml").read_text(encoding="utf-8")
         version_info = (project_root / "version_info.txt").read_text(encoding="utf-8")
 
-        self.assertEqual(__version__, "1.4.0")
         self.assertEqual(serve.app.version, __version__)
-        self.assertIn('version = "1.4.0"', pyproject)
-        self.assertIn('StringStruct("ProductVersion", "1.4.0")', version_info)
+        self.assertIn(f'version = "{__version__}"', pyproject)
+        self.assertIn(f'StringStruct("ProductVersion", "{__version__}")', version_info)
+        self.assertIn(
+            f'StringStruct("OriginalFilename", "{release_exe_name()}")',
+            version_info,
+        )
 
 
 if __name__ == "__main__":

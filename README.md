@@ -32,6 +32,7 @@ Author: **梦无矶** | 公众号: **梦无矶测开实录**
 - [本地浏览文档](#-本地浏览文档)
 - [移动端阅读](#-移动端阅读)
 - [注意事项](#-注意事项)
+- [打包为可执行文件](#-打包为可执行文件免-python-环境运行)
 - [开发说明](#-开发说明)
 - [许可证](#-许可证)
 
@@ -225,15 +226,17 @@ kill -9 <PID>
 
 ```bash
 uv sync --group dev
-uv run pyinstaller serve.spec --noconfirm
+uv run python scripts/build_release.py
 ```
 
 | 平台 | 产物 | 大小 |
 |------|------|------|
-| Windows | `dist/MWJDocs.exe` | ~16MB |
-| macOS | `dist/MWJDocs` | ~20MB |
+| Windows | `dist/MWJDocs-v<版本号>.exe` | ~16MB |
+| macOS | `dist/MWJDocs-v<版本号>` | ~20MB |
 
-> 注意：必须在对应平台上执行打包命令，不支持交叉编译。macOS 打包需要在 Mac 上运行。
+Windows 发布脚本会自动读取 `version.py`，构建并校验版本化 EXE；校验成功后才会删除仓库根目录及 `dist/` 中的旧版本，并生成 `dist/SHA256SUMS.txt`。完整规则见[发布与打包规则](doc/发布与打包规则.md)。
+
+> 注意：Windows EXE 必须在 Windows 上构建，不支持交叉编译。macOS 打包需在 Mac 上直接运行 `uv run pyinstaller serve.spec --noconfirm`。
 
 ### 使用方式
 
@@ -243,20 +246,20 @@ uv run pyinstaller serve.spec --noconfirm
 
 ```text
 任意目录/
-├── MWJDocs.exe
+├── MWJDocs-v1.4.0.exe
 └── 我的文档/          # 可以是任意名称
     ├── 笔记A/
     ├── 笔记B/
     └── ...
 ```
 
-双击 `MWJDocs.exe` 即可启动。
+双击当前版本的 `MWJDocs-v1.4.0.exe` 即可启动。
 
 **多目录支持：**
 
 ```text
 任意目录/
-├── MWJDocs.exe
+├── MWJDocs-v1.4.0.exe
 ├── result/            # 语雀导出的文档
 ├── MyNotes/          # 个人笔记
 └── WorkDocs/         # 工作文档
@@ -268,7 +271,7 @@ uv run pyinstaller serve.spec --noconfirm
 
 ```text
 任意目录/
-├── MWJDocs
+├── MWJDocs-v1.4.0
 └── 我的文档/
     ├── 笔记A/
     └── ...
@@ -276,9 +279,9 @@ uv run pyinstaller serve.spec --noconfirm
 
 ```bash
 # 首次使用需赋予执行权限
-chmod +x MWJDocs
+chmod +x MWJDocs-v1.4.0
 # 启动
-./MWJDocs
+./MWJDocs-v1.4.0
 ```
 
 如果 macOS 提示「无法打开，因为无法验证开发者」，在系统设置 → 隐私与安全 → 点击「仍要打开」即可。
@@ -287,11 +290,11 @@ chmod +x MWJDocs
 
 ```bash
 # Windows
-MWJDocs.exe --port 9000 --dir ./my_docs
-MWJDocs.exe --version
+MWJDocs-v1.4.0.exe --port 9000 --dir ./my_docs
+MWJDocs-v1.4.0.exe --version
 
 # macOS / Linux
-./MWJDocs --port 9000 --dir ./my_docs
+./MWJDocs-v1.4.0 --port 9000 --dir ./my_docs
 ```
 
 | 参数 | 说明 |
@@ -322,6 +325,8 @@ uv run python -m unittest discover -s tests -v
 ```
 
 项目依赖声明在 `pyproject.toml`，使用 uv 管理环境和锁文件。
+
+正式发布前请遵循[发布与打包规则](doc/发布与打包规则.md)，不要手工重命名构建产物。
 
 ---
 

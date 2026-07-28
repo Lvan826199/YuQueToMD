@@ -20,7 +20,7 @@ VSVersionInfo(
                     StringStruct("FileVersion", "1.4.0"),
                     StringStruct("InternalName", "MWJDocs"),
                     StringStruct("LegalCopyright", "Copyright (c) 2026 梦无矶"),
-                    StringStruct("OriginalFilename", "MWJDocs.exe"),
+                    StringStruct("OriginalFilename", "MWJDocs-v1.4.0.exe"),
                     StringStruct("ProductName", "MWJ Docs"),
                     StringStruct("ProductVersion", "1.4.0"),
                 ],

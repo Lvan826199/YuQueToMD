@@ -1,6 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 # PyInstaller spec file for serve.py
 
+import sys
+from pathlib import Path
+
+
+project_root = Path(SPECPATH)
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+from release_config import release_artifact_stem
+
 a = Analysis(
     ['serve.py'],
     pathex=[],
@@ -37,7 +47,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='MWJDocs',
+    name=release_artifact_stem(),
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
