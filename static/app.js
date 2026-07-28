@@ -1,4 +1,6 @@
 // Author: 梦无矶 | 公众号: 梦无矶测开实录
+hljs.configure({ignoreUnescapedHTML: true});
+
 const treeNav = document.getElementById("tree-nav");
 const docContent = document.getElementById("doc-content");
 const searchInput = document.getElementById("search-input");
@@ -11,6 +13,8 @@ let searchTimer = null;
 let currentDocPath = null;
 let easyMDE = null;
 let autoSaveTimer = null;
+let saveQueue = Promise.resolve();
+let saveRevision = 0;
 
 async function loadTree() {
     const resp = await fetch("/api/tree");
@@ -120,6 +124,63 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+function sanitizeHtml(html) {
+    const template = document.createElement("template");
+    template.innerHTML = html;
+    const blockedTags = new Set([
+        "SCRIPT", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "BASE",
+        "FORM", "INPUT", "BUTTON", "TEXTAREA", "SELECT", "STYLE",
+    ]);
+    const safeDataImage = /^data:image\/(?:png|jpeg|gif|webp);/i;
+
+    template.content.querySelectorAll("*").forEach((element) => {
+        if (blockedTags.has(element.tagName)) {
+            element.remove();
+            return;
+        }
+        for (const attribute of [...element.attributes]) {
+            const name = attribute.name.toLowerCase();
+            const value = attribute.value.trim();
+            if (name.startsWith("on") || ["srcdoc", "style", "formaction"].includes(name)) {
+                element.removeAttribute(attribute.name);
+                continue;
+            }
+            if (["href", "src", "xlink:href"].includes(name)) {
+                const compact = value.replace(/[\u0000-\u0020]+/g, "").toLowerCase();
+                const isRelative = value.startsWith("/") || value.startsWith("./") ||
+                    value.startsWith("../") || value.startsWith("#");
+                const isAllowedProtocol = /^(?:https?:|mailto:)/i.test(value);
+                const isAllowedData = name === "src" && safeDataImage.test(value);
+                if (!isRelative && !isAllowedProtocol && !isAllowedData ||
+                    compact.startsWith("javascript:") || compact.startsWith("vbscript:")) {
+                    element.removeAttribute(attribute.name);
+                }
+            }
+        }
+    });
+    return template.innerHTML;
+}
+
+function encodePath(path) {
+    return path.split("/").map((segment) => {
+        try {
+            return encodeURIComponent(decodeURIComponent(segment));
+        } catch {
+            return encodeURIComponent(segment);
+        }
+    }).join("/");
+}
+
+function rewritePreviewImagePaths(html, docPath) {
+    const slash = docPath.lastIndexOf("/");
+    const docDir = slash >= 0 ? docPath.substring(0, slash) + "/" : "";
+    return html.replace(
+        /src=(["'])(?:\.\/)?attachments\/([^"']+)\1/gi,
+        (_, quote, attachment) =>
+            `src=${quote}/files/${encodePath(docDir + "attachments/" + attachment)}${quote}`,
+    );
+}
+
 treeNav.addEventListener("click", (e) => {
     const label = e.target.closest(".tree-label");
     if (label) {
@@ -135,6 +196,13 @@ treeNav.addEventListener("click", (e) => {
     }
 });
 
+docContent.addEventListener("click", (e) => {
+    const button = e.target.closest("[data-open-path]");
+    if (button) {
+        openLocal(button.dataset.openPath || "", button.dataset.openType || "file");
+    }
+});
+
 async function loadDoc(path, highlight) {
     currentDocPath = path;
     const resp = await fetch(`/api/doc?path=${encodeURIComponent(path)}`);
@@ -147,7 +215,7 @@ async function loadDoc(path, highlight) {
         <button class="fab-btn" id="edit-btn" title="编辑">&#9998;</button>
         <button class="fab-btn" id="open-file-btn" title="用编辑器打开">&#128196;</button>
         <button class="fab-btn" id="open-folder-btn" title="打开文件夹">&#128193;</button>
-    </div>` + data.html;
+    </div>` + sanitizeHtml(data.html);
     document.title = data.title + " - MWJ Docs";
     location.hash = encodeURIComponent(path);
     docContent.querySelectorAll("pre code").forEach((block) => {
@@ -187,14 +255,14 @@ async function loadFile(path, fileType, highlight) {
         docContent.innerHTML = `<div class="preview-image">
             <img src="${escapeHtml(data.url)}" alt="${escapeHtml(data.name)}">
             <div class="preview-filename">${escapeHtml(data.name)}</div>
-            <button class="preview-open-btn" style="margin-top:16px;" onclick="openLocal('${escapeAttr(path)}', 'file')">用系统默认程序打开</button>
+            <button class="preview-open-btn" style="margin-top:16px;" data-open-path="${escapeHtml(path)}" data-open-type="file">用系统默认程序打开</button>
         </div>`;
         document.title = data.name + " - MWJ Docs";
     } else if (data.type === "pdf") {
         docContent.innerHTML = `<div class="preview-pdf">
             <iframe src="${escapeHtml(data.url)}" title="${escapeHtml(data.name)}"></iframe>
             <div class="preview-fallback">
-                如果 PDF 无法显示：<button class="preview-open-btn" onclick="openLocal('${escapeAttr(path)}', 'file')">用系统默认程序打开</button>
+                如果 PDF 无法显示：<button class="preview-open-btn" data-open-path="${escapeHtml(path)}" data-open-type="file">用系统默认程序打开</button>
             </div>
         </div>`;
         document.title = data.name + " - MWJ Docs";
@@ -203,7 +271,7 @@ async function loadFile(path, fileType, highlight) {
         docContent.innerHTML = `<div class="preview-text">
             <div class="preview-toolbar">
                 <span class="preview-filename">${escapeHtml(data.name)}</span>
-                <button class="preview-open-btn" onclick="openLocal('${escapeAttr(path)}', 'file')">用编辑器打开</button>
+                <button class="preview-open-btn" data-open-path="${escapeHtml(path)}" data-open-type="file">用编辑器打开</button>
             </div>
             <pre><code${lang}>${escapeHtml(data.content)}</code></pre>
         </div>`;
@@ -214,15 +282,11 @@ async function loadFile(path, fileType, highlight) {
             <div class="preview-icon">📎</div>
             <div class="preview-filename">${escapeHtml(data.name)}</div>
             <div class="preview-hint">此文件格式不支持在线预览</div>
-            <button class="preview-open-btn" onclick="openLocal('${escapeAttr(path)}', 'file')">用系统默认程序打开</button>
+            <button class="preview-open-btn" data-open-path="${escapeHtml(path)}" data-open-type="file">用系统默认程序打开</button>
         </div>`;
         document.title = data.name + " - MWJ Docs";
     }
     contentEl.scrollTop = 0;
-}
-
-function escapeAttr(str) {
-    return str.replace(/'/g, "\\'").replace(/\\/g, "\\\\");
 }
 
 function scrollToHighlight(keyword) {
@@ -449,11 +513,9 @@ async function enterEditMode(path) {
         status: false,
         minHeight: "calc(100vh - 160px)",
         previewRender: (plainText, preview) => {
-            const docDir = path.substring(0, path.lastIndexOf("/"));
             let html = easyMDE.markdown(plainText);
-            html = html.replace(/src="\.\/attachments\//g, 'src="/files/' + docDir + '/attachments/');
-            html = html.replace(/src="attachments\//g, 'src="/files/' + docDir + '/attachments/');
-            return html;
+            html = rewritePreviewImagePaths(html, path);
+            return sanitizeHtml(html);
         },
         uploadImage: true,
         imageUploadFunction: (file, onSuccess, onError) => {
@@ -468,7 +530,7 @@ async function enterEditMode(path) {
                 })
                 .catch(e => onError(e.message));
         },
-        imageAccept: "image/png, image/jpeg, image/gif, image/webp, image/svg+xml",
+        imageAccept: "image/png, image/jpeg, image/gif, image/webp",
         toolbar: [
             {name: "bold", action: EasyMDE.toggleBold, className: "fa fa-bold", title: "加粗"},
             {name: "italic", action: EasyMDE.toggleItalic, className: "fa fa-italic", title: "斜体"},
@@ -489,19 +551,22 @@ async function enterEditMode(path) {
             {name: "fullscreen", action: EasyMDE.toggleFullScreen, className: "fa fa-arrows-alt no-disable no-mobile", title: "全屏"},
             "|",
             {name: "save", action: () => saveDoc(path), className: "fa fa-floppy-o", title: "保存 (Ctrl+S)"},
-            {name: "exit", action: () => exitEditMode(path), className: "fa fa-times-circle", title: "退出编辑"},
+            {name: "exit", action: () => finishEdit(path), className: "fa fa-times-circle", title: "保存并退出编辑"},
         ],
     });
 
-    setTimeout(() => EasyMDE.toggleSideBySide(easyMDE), 100);
+    setTimeout(() => {
+        if (easyMDE) EasyMDE.toggleSideBySide(easyMDE);
+    }, 100);
 
     easyMDE.codemirror.on("change", () => {
+        saveRevision += 1;
         clearTimeout(autoSaveTimer);
         autoSaveTimer = setTimeout(() => saveDoc(path), 2000);
     });
 
     document.getElementById("save-btn").addEventListener("click", () => saveDoc(path));
-    document.getElementById("done-btn").addEventListener("click", () => exitEditMode(path));
+    document.getElementById("done-btn").addEventListener("click", () => finishEdit(path));
     document.getElementById("cancel-btn").addEventListener("click", () => cancelEdit(path));
     document.getElementById("exit-btn").addEventListener("click", () => cancelEdit(path));
 
@@ -516,32 +581,51 @@ function editorKeyHandler(e) {
 }
 
 async function saveDoc(path) {
-    if (!easyMDE) return;
+    if (!easyMDE) return false;
     const content = easyMDE.value();
     const statusEl = document.getElementById("save-status");
-    try {
-        const resp = await fetch("/api/save", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({path, content}),
-        });
-        const data = await resp.json();
-        if (data.ok) {
-            statusEl.textContent = "已保存";
-            statusEl.style.color = "#2da44e";
-            checkOrphanImages(path, content);
-        } else {
-            statusEl.textContent = "保存失败";
-            statusEl.style.color = "#cf222e";
+    const revision = ++saveRevision;
+    const operation = async () => {
+        try {
+            const resp = await fetch("/api/save", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({path, content}),
+            });
+            const data = await resp.json();
+            if (data.ok) {
+                if (statusEl) {
+                    statusEl.textContent = "已保存";
+                    statusEl.style.color = "#2da44e";
+                }
+                if (revision === saveRevision) checkOrphanImages(path, content, revision);
+                setTimeout(() => {
+                    if (statusEl) statusEl.textContent = "";
+                }, 2000);
+                return true;
+            }
+            if (statusEl) {
+                statusEl.textContent = "保存失败";
+                statusEl.style.color = "#cf222e";
+            }
+        } catch {
+            if (statusEl) {
+                statusEl.textContent = "保存失败";
+                statusEl.style.color = "#cf222e";
+            }
         }
-    } catch {
-        statusEl.textContent = "保存失败";
-        statusEl.style.color = "#cf222e";
-    }
-    setTimeout(() => { statusEl.textContent = ""; }, 2000);
+        setTimeout(() => {
+            if (statusEl) statusEl.textContent = "";
+        }, 2000);
+        return false;
+    };
+
+    const queuedSave = saveQueue.then(operation, operation);
+    saveQueue = queuedSave.then(() => undefined, () => undefined);
+    return queuedSave;
 }
 
-async function checkOrphanImages(path, content) {
+async function checkOrphanImages(path, content, revision) {
     try {
         const resp = await fetch("/api/check-orphan-images", {
             method: "POST",
@@ -549,7 +633,7 @@ async function checkOrphanImages(path, content) {
             body: JSON.stringify({path, content}),
         });
         const data = await resp.json();
-        if (data.orphans && data.orphans.length > 0) {
+        if (revision === saveRevision && data.orphans && data.orphans.length > 0) {
             showOrphanDialog(path, data.orphans);
         }
     } catch {}
@@ -567,7 +651,7 @@ function showOrphanDialog(path, orphans) {
             <div class="dialog-body">
                 <p>以下 <strong>${orphans.length}</strong> 张图片不再被文档引用，是否删除？</p>
                 <ul class="dialog-file-list">
-                    ${orphans.map(f => `<li>${f}</li>`).join("")}
+                    ${orphans.map(f => `<li>${escapeHtml(f)}</li>`).join("")}
                 </ul>
             </div>
             <div class="dialog-actions">
@@ -602,7 +686,15 @@ function exitEditMode(path) {
     loadDoc(path);
 }
 
+async function finishEdit(path) {
+    clearTimeout(autoSaveTimer);
+    if (await saveDoc(path)) {
+        exitEditMode(path);
+    }
+}
+
 function cancelEdit(path) {
+    saveRevision += 1;
     document.removeEventListener("keydown", editorKeyHandler);
     document.body.classList.remove("editing");
     clearTimeout(autoSaveTimer);

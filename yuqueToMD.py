@@ -4,15 +4,22 @@
 import argparse
 import json
 import os
+import re
+import shutil
 import sys
 import tarfile
 import tempfile
 import time
+import unicodedata
+from pathlib import Path
+from urllib.parse import urlparse
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
 from requests import get
 import yaml
+
+from version import __version__
 
 
 TYPE_TITLE = "TITLE"
@@ -22,6 +29,10 @@ META_JSON = "$meta.json"
 DEFAULT_HEADING_STYLE = "ATX"
 DEFAULT_CODE_LANGUAGE = "python"
 MAX_RETRIES = 3
+MAX_FILE_NAME_LENGTH = 150
+MAX_IMAGE_BYTES = 50 * 1024 * 1024
+MAX_TAR_MEMBERS = 100000
+MAX_TAR_UNCOMPRESSED_BYTES = 5 * 1024 * 1024 * 1024
 
 failed_images = []
 
@@ -60,23 +71,16 @@ reserved_file_names = {
 
 
 def sanitizer_file_name(name):
-    name = name.replace("/", "_")
-    name = name.replace("\\", "_")
-    name = name.replace(" ", "_")
-    name = name.replace("?", "_")
-    name = name.replace("*", "_")
-    name = name.replace("<", "_")
-    name = name.replace(">", "_")
-    name = name.replace("|", "_")
-    name = name.replace('"', "_")
-    name = name.replace(":", "_")
-    name = name.replace("(", "_")
-    name = name.replace(")", "_")
+    name = unicodedata.normalize("NFC", str(name))
+    name = re.sub(r'[\\/:*?"<>|()\x00-\x1f]', "_", name)
+    name = re.sub(r"\s", "_", name)
     name = name.strip(". ")
     if not name:
         return "未命名"
-    if name.upper() in reserved_file_names:
-        return name + "_"
+    name = name[:MAX_FILE_NAME_LENGTH].rstrip(". ") or "未命名"
+    if name.split(".", 1)[0].upper() in reserved_file_names:
+        parts = name.split(".", 1)
+        name = parts[0] + "_" + (("." + parts[1]) if len(parts) == 2 else "")
     return name
 
 
@@ -85,10 +89,11 @@ def unique_path_name(base_dir, name, suffix="", used_paths=None):
     index = 1
     while True:
         candidate_path = os.path.join(base_dir, candidate + suffix)
-        is_used = used_paths is not None and candidate_path in used_paths
+        normalized_path = os.path.normcase(os.path.abspath(candidate_path))
+        is_used = used_paths is not None and normalized_path in used_paths
         if not os.path.exists(candidate_path) and not is_used:
             if used_paths is not None:
-                used_paths.add(candidate_path)
+                used_paths.add(normalized_path)
             return candidate
         candidate = "%s_%d" % (name, index)
         index = index + 1
@@ -110,6 +115,67 @@ def read_toc(random_tmp_dir):
     meta = json.loads(meta_str)
     toc_str = meta.get("book", {}).get("tocYml", "")
     return yaml.safe_load(toc_str) or []
+
+
+def resolve_within(root, relative_path):
+    root_path = Path(root).resolve()
+    candidate = (root_path / relative_path).resolve()
+    try:
+        candidate.relative_to(root_path)
+    except ValueError as error:
+        raise ValueError("Invalid path: " + str(relative_path)) from error
+    return candidate
+
+
+def atomic_write_text(path, content):
+    destination = Path(path)
+    temp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", newline="", dir=destination.parent,
+            prefix="." + destination.name + ".", suffix=".tmp", delete=False,
+        ) as temp_file:
+            temp_file.write(content)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+            temp_path = Path(temp_file.name)
+        os.replace(temp_path, destination)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
+
+
+def fetch_image(url):
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise ValueError("Unsupported image URL")
+    with get(url, timeout=(5, 30), stream=True) as response:
+        response.raise_for_status()
+        content_length = response.headers.get("Content-Length")
+        if content_length and int(content_length) > MAX_IMAGE_BYTES:
+            raise ValueError("Image exceeds size limit")
+        chunks = []
+        total = 0
+        for chunk in response.iter_content(chunk_size=64 * 1024):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > MAX_IMAGE_BYTES:
+                raise ValueError("Image exceeds size limit")
+            chunks.append(chunk)
+        content_type = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
+        return b"".join(chunks), content_type
+
+
+def next_attachment_number(target_dir, prefix):
+    pattern = re.compile(r"^" + re.escape(prefix) + r"_(\d+)(?:\.[^.]*)?$")
+    numbers = []
+    for entry in Path(target_dir).iterdir():
+        if entry.is_file():
+            match = pattern.match(entry.name)
+            if match:
+                numbers.append(int(match.group(1)))
+    return max(numbers, default=0) + 1
 
 
 def extract_repos(repo_dir, output, toc, download_image):
@@ -142,7 +208,9 @@ def extract_repos(repo_dir, output, toc, download_image):
 
         if t == TYPE_DOC:
             os.makedirs(output_dir_path, exist_ok=True)
-            raw_path = os.path.join(repo_dir, url + ".json")
+            raw_path = resolve_within(repo_dir, url + ".json")
+            if not raw_path.is_file():
+                raise ValueError("Document source not found: " + url)
             with open(raw_path, "r", encoding="utf-8") as raw_file:
                 doc_str = json.load(raw_file)
             html = doc_str["doc"]["body"] or doc_str["doc"]["body_asl"]
@@ -159,8 +227,7 @@ def extract_repos(repo_dir, output, toc, download_image):
                 code_language=DEFAULT_CODE_LANGUAGE,
                 code_language_callback=get_code_language,
             )
-            with open(output_path, "w", encoding="utf-8") as f:
-                f.write(pretty_md(markdown))
+            atomic_write_text(output_path, pretty_md(markdown))
 
         last_sanitized_title = sanitized_title
         last_level = current_level
@@ -184,10 +251,11 @@ def download_images_and_patch_html(output_dir_path, sanitized_title, html):
         print("Download %s" % src)
 
         success = False
+        image_data = b""
+        content_type = ""
         for attempt in range(MAX_RETRIES):
             try:
-                resp = get(src, timeout=30)
-                resp.raise_for_status()
+                image_data, content_type = fetch_image(src)
                 success = True
                 break
             except Exception as e:
@@ -201,14 +269,14 @@ def download_images_and_patch_html(output_dir_path, sanitized_title, html):
             failed_images.append((md_path, src))
             continue
 
-        content_type = resp.headers.get("Content-Type", "").split(";", 1)[0].lower()
+        no = max(no, next_attachment_number(attachments_dir_path, sanitized_title))
         file_name = sanitized_title + "_%03d%s" % (
             no,
             content_type_to_extension.get(content_type, ""),
         )
         attachments_file_path = os.path.join(attachments_dir_path, file_name)
-        with open(attachments_file_path, "wb") as f:
-            f.write(resp.content)
+        with open(attachments_file_path, "xb") as f:
+            f.write(image_data)
         no = no + 1
         image["src"] = "./attachments/" + file_name
     return str(bs)
@@ -231,16 +299,14 @@ def write_failed_log(output_dir):
         with open(log_path, "r", encoding="utf-8") as f:
             existing = f.readlines()
 
-    with open(log_path, "w", encoding="utf-8") as f:
-        if not existing:
-            f.write("# 图片下载失败记录\n\n")
-            f.write("| MD 文件 | 图片 URL |\n")
-            f.write("| --- | --- |\n")
-        else:
-            f.writelines(existing)
-
-        for md_path, url in failed_images:
-            f.write("| %s | %s |\n" % (md_path, url))
+    output = "".join(existing)
+    if not existing:
+        output = "# 图片下载失败记录\n\n| MD 文件 | 图片 URL |\n| --- | --- |\n"
+    for md_path, url in failed_images:
+        safe_path = str(md_path).replace("|", "\\|").replace("\n", " ")
+        safe_url = str(url).replace("|", "\\|").replace("\n", " ")
+        output += "| %s | %s |\n" % (safe_path, safe_url)
+    atomic_write_text(log_path, output)
 
     print("\n[WARN] %d images failed, logged to %s" % (len(failed_images), log_path))
 
@@ -266,7 +332,7 @@ def verify_and_fix_images(output_dir):
 
         # 只处理远程 URL 图片引用
         remote_refs = re.findall(r'!\[[^\]]*\]\((https?://[^)\s]+)\)', content)
-        for img_url in remote_refs:
+        for img_url in dict.fromkeys(remote_refs):
             if not is_likely_image(img_url):
                 continue
             img_url_fixed = fix_image_url(img_url)
@@ -274,8 +340,9 @@ def verify_and_fix_images(output_dir):
             attachments_dir.mkdir(exist_ok=True)
             file_name = try_download(img_url_fixed, attachments_dir, md_file.stem)
             if file_name:
+                replaced_count = content.count(img_url)
                 content = content.replace(img_url, "./attachments/" + file_name)
-                fixed += 1
+                fixed += replaced_count
             else:
                 # 远程 URL 下载失败，保留原始链接，记录到失败日志
                 failed_images.append((str(md_file), img_url))
@@ -289,7 +356,7 @@ def verify_and_fix_images(output_dir):
                 failed_images.append((str(md_file), ref))
 
         if content != original:
-            md_file.write_text(content, encoding="utf-8")
+            atomic_write_text(md_file, content)
 
     print("校验完成，修复 %d 个远程图片引用" % fixed)
 
@@ -303,9 +370,7 @@ def is_likely_image(url):
 def try_download(url, target_dir, prefix):
     for attempt in range(MAX_RETRIES):
         try:
-            resp = get(url, timeout=30)
-            resp.raise_for_status()
-            content_type = resp.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            image_data, content_type = fetch_image(url)
             ext = content_type_to_extension.get(content_type, "")
             if not ext:
                 url_path = url.split("?")[0]
@@ -313,11 +378,15 @@ def try_download(url, target_dir, prefix):
                     if url_path.endswith(e):
                         ext = e
                         break
-            existing = list(target_dir.glob(prefix + "_*"))
-            no = len(existing) + 1
-            file_name = "%s_%03d%s" % (prefix, no, ext)
-            (target_dir / file_name).write_bytes(resp.content)
-            return file_name
+            while True:
+                no = next_attachment_number(target_dir, prefix)
+                file_name = "%s_%03d%s" % (prefix, no, ext)
+                try:
+                    with (target_dir / file_name).open("xb") as output:
+                        output.write(image_data)
+                    return file_name
+                except FileExistsError:
+                    continue
         except Exception:
             if attempt < MAX_RETRIES - 1:
                 time.sleep(1)
@@ -363,6 +432,7 @@ def pretty_md(text: str) -> str:
 
 def main():
     parser = argparse.ArgumentParser(description="Convert Yuque doc to markdown")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.add_argument("lakebook", help="Lakebook file")
     parser.add_argument("output", help="Output directory")
     parser.add_argument(
@@ -399,16 +469,29 @@ def main():
 def extract_tar(tar_file, target_dir):
     if not os.path.exists(target_dir):
         os.mkdir(target_dir)
-    target_dir_abs = os.path.abspath(target_dir)
+    target_root = Path(target_dir).resolve()
     with tarfile.open(tar_file) as tar:
-        for name in tar.getnames():
-            target_path = os.path.abspath(os.path.join(target_dir, name))
-            if os.path.commonpath([target_dir_abs, target_path]) != target_dir_abs:
-                raise ValueError("Invalid path in tar file: " + name)
-            try:
-                tar.extract(name, target_dir, filter="data")
-            except TypeError:
-                tar.extract(name, target_dir)
+        members = tar.getmembers()
+        if len(members) > MAX_TAR_MEMBERS:
+            raise ValueError("Too many files in lakebook archive")
+        total_size = sum(member.size for member in members if member.isfile())
+        if total_size > MAX_TAR_UNCOMPRESSED_BYTES:
+            raise ValueError("Lakebook archive is too large")
+
+        for member in members:
+            target_path = resolve_within(target_root, member.name)
+            if member.isdir():
+                target_path.mkdir(parents=True, exist_ok=True)
+                continue
+            if not member.isfile():
+                raise ValueError("Unsupported archive entry: " + member.name)
+
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            source = tar.extractfile(member)
+            if source is None:
+                raise ValueError("Cannot read archive entry: " + member.name)
+            with source, target_path.open("wb") as destination:
+                shutil.copyfileobj(source, destination, length=64 * 1024)
 
 
 if __name__ == "__main__":

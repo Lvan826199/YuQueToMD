@@ -7,6 +7,7 @@
 **梦无矶的知识库 · 本地阅读器**
 
 [![Python](https://img.shields.io/badge/Python-3.9+-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Release](https://img.shields.io/github/v/release/Lvan826199/YuQueToMD?logo=github)](https://github.com/Lvan826199/YuQueToMD/releases/latest)
 [![GitHub stars](https://img.shields.io/github/stars/Lvan826199/YuQueToMD?style=flat&logo=github)](https://github.com/Lvan826199/YuQueToMD)
 [![Gitee](https://img.shields.io/badge/Gitee-repo-red?logo=gitee)](https://gitee.com/xiaozai-van-liu/YuQueToMD)
 [![License](https://img.shields.io/badge/License-MIT-green)](LICENSE)
@@ -14,6 +15,8 @@
 Author: **梦无矶** | 公众号: **梦无矶测开实录**
 
 [GitHub](https://github.com/Lvan826199/YuQueToMD) · [Gitee](https://gitee.com/xiaozai-van-liu/YuQueToMD)
+
+当前版本：**v1.4.0** · [更新日志](CHANGELOG.md)
 
 </div>
 
@@ -208,6 +211,9 @@ kill -9 <PID>
 - 自动修复语雀 CDN 图片 URL 中重复 `?x-oss-process` 参数的问题
 - 图片响应头无可识别 `Content-Type` 时，本地文件可能没有扩展名
 - `.lakebook` 文件损坏或格式不完整时可能无法转换
+- 网页上传支持 PNG、JPEG、GIF、WebP，单张图片最大 20MB
+- Markdown 中的原始 HTML 默认按文本显示，避免本地文档执行脚本
+- lakebook 解压会拒绝符号链接、越界路径和异常体积的归档
 
 ---
 
@@ -282,6 +288,7 @@ chmod +x MWJDocs
 ```bash
 # Windows
 MWJDocs.exe --port 9000 --dir ./my_docs
+MWJDocs.exe --version
 
 # macOS / Linux
 ./MWJDocs --port 9000 --dir ./my_docs
@@ -291,6 +298,7 @@ MWJDocs.exe --port 9000 --dir ./my_docs
 |------|------|
 | `--port` | 指定端口号（默认自动从 9000 检测） |
 | `--dir` | 指定文档目录（默认可执行文件同级的 `result/`） |
+| `--version` | 显示当前版本 |
 
 ### 注意事项
 
@@ -310,6 +318,7 @@ MWJDocs.exe --port 9000 --dir ./my_docs
 uv sync
 uv run python yuqueToMD.py --help
 uv run python serve.py
+uv run python -m unittest discover -s tests -v
 ```
 
 项目依赖声明在 `pyproject.toml`，使用 uv 管理环境和锁文件。

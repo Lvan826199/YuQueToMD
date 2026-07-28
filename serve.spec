@@ -46,4 +46,5 @@ exe = EXE(
     runtime_tmpdir=None,
     console=True,
     icon='mwj-logo.ico',
+    version='version_info.txt',
 )
