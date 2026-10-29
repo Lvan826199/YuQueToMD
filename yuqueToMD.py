@@ -2,17 +2,19 @@
 # Author: 梦无矶
 # 公众号: 梦无矶测开实录
 import argparse
+import ipaddress
 import json
 import os
 import re
 import shutil
+import socket
 import sys
 import tarfile
 import tempfile
 import time
 import unicodedata
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify as md
@@ -33,6 +35,7 @@ MAX_FILE_NAME_LENGTH = 150
 MAX_IMAGE_BYTES = 50 * 1024 * 1024
 MAX_TAR_MEMBERS = 100000
 MAX_TAR_UNCOMPRESSED_BYTES = 5 * 1024 * 1024 * 1024
+MAX_IMAGE_REDIRECTS = 3
 
 failed_images = []
 
@@ -145,26 +148,51 @@ def atomic_write_text(path, content):
             temp_path.unlink()
 
 
-def fetch_image(url):
+def _validate_image_url(url):
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise ValueError("Unsupported image URL")
-    with get(url, timeout=(5, 30), stream=True) as response:
-        response.raise_for_status()
-        content_length = response.headers.get("Content-Length")
-        if content_length and int(content_length) > MAX_IMAGE_BYTES:
-            raise ValueError("Image exceeds size limit")
-        chunks = []
-        total = 0
-        for chunk in response.iter_content(chunk_size=64 * 1024):
-            if not chunk:
+    hostname = parsed.hostname.rstrip(".")
+    try:
+        addresses = [ipaddress.ip_address(hostname)]
+    except ValueError:
+        try:
+            addresses = [ipaddress.ip_address(info[4][0]) for info in socket.getaddrinfo(hostname, None)]
+        except OSError as error:
+            raise ValueError("Unable to resolve image host") from error
+    if any(address.is_private or address.is_loopback or address.is_link_local or
+           address.is_reserved or address.is_multicast or address.is_unspecified for address in addresses):
+        raise ValueError("Image host is not allowed")
+    return parsed
+
+
+def fetch_image(url):
+    current_url = url
+    for _ in range(MAX_IMAGE_REDIRECTS + 1):
+        _validate_image_url(current_url)
+        with get(current_url, timeout=(5, 30), stream=True, allow_redirects=False) as response:
+            if response.is_redirect or response.is_permanent_redirect:
+                location = response.headers.get("Location")
+                if not location:
+                    raise ValueError("Invalid image redirect")
+                current_url = urljoin(current_url, location)
                 continue
-            total += len(chunk)
-            if total > MAX_IMAGE_BYTES:
+            response.raise_for_status()
+            content_length = response.headers.get("Content-Length")
+            if content_length and int(content_length) > MAX_IMAGE_BYTES:
                 raise ValueError("Image exceeds size limit")
-            chunks.append(chunk)
-        content_type = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
-        return b"".join(chunks), content_type
+            chunks = []
+            total = 0
+            for chunk in response.iter_content(chunk_size=64 * 1024):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_IMAGE_BYTES:
+                    raise ValueError("Image exceeds size limit")
+                chunks.append(chunk)
+            content_type = response.headers.get("Content-Type", "").split(";", 1)[0].lower()
+            return b"".join(chunks), content_type
+    raise ValueError("Too many image redirects")
 
 
 def next_attachment_number(target_dir, prefix):

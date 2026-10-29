@@ -117,8 +117,59 @@ class ServeRegressionTests(unittest.TestCase):
         self.assertIn('/files/attachments/a%20b.png', serve.rewrite_image_paths(rendered, "."))
         self.assertNotIn("%2520", serve.rewrite_image_paths(rendered, "."))
 
+    def test_save_rejects_external_file_change(self):
+        document = self.root / "doc.md"
+        document.write_text("before", encoding="utf-8")
+        raw_response = asyncio.run(serve.raw(path="doc.md"))
+        revision = response_json(raw_response)["revision"]
+        document.write_text("outside", encoding="utf-8")
+
+        response = asyncio.run(serve.save({
+            "path": "doc.md", "content": "editor", "revision": revision,
+        }))
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(document.read_text(encoding="utf-8"), "outside")
+
+    def test_large_markdown_is_not_loaded_for_preview(self):
+        document = self.root / "large.md"
+        document.write_text("x" * (serve.MAX_PREVIEW_BYTES + 1), encoding="utf-8")
+
+        response = asyncio.run(serve.raw(path="large.md"))
+
+        self.assertEqual(response.status_code, 413)
+
+    def test_large_search_file_is_skipped(self):
+        document = self.root / "large.md"
+        document.write_text("needle" + "x" * serve.MAX_SEARCH_FILE_BYTES, encoding="utf-8")
+
+        self.assertEqual(serve.search_files(self.root, "needle"), [])
+
+    def test_tree_loads_only_one_level(self):
+        nested = self.root / "第一层" / "第二层"
+        nested.mkdir(parents=True)
+        (nested / "doc.md").write_text("content", encoding="utf-8")
+
+        response = asyncio.run(serve.tree(path=""))
+        data = response_json(response)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(data[0]["name"], "第一层")
+        self.assertIsNone(data[0]["children"])
+
+        child_response = asyncio.run(serve.tree(path="第一层"))
+        child_data = response_json(child_response)
+        self.assertEqual(child_data[0]["name"], "第二层")
+
 
 class ConverterRegressionTests(unittest.TestCase):
+    def test_image_download_rejects_private_hosts(self):
+        with self.assertRaises(ValueError):
+            yuqueToMD.fetch_image("http://127.0.0.1/image.png")
+
+        with self.assertRaises(ValueError):
+            yuqueToMD.fetch_image("http://169.254.169.254/latest/meta-data")
+
     def test_windows_reserved_name_with_extension_is_made_safe(self):
         value = yuqueToMD.sanitizer_file_name("CON.json")
 

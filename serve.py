@@ -3,10 +3,12 @@
 # 公众号: 梦无矶测开实录
 import argparse
 import asyncio
+import hashlib
 import html as html_lib
 import os
 import platform
 import re
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -43,6 +45,10 @@ TEXT_EXTS = {".txt", ".json", ".yaml", ".yml", ".toml", ".xml", ".csv", ".log", 
              ".html", ".css", ".sql", ".r", ".lua", ".rb", ".kt", ".swift", ".dart"}
 MD_EXTS = {".md"}
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
+MAX_SEARCH_FILE_BYTES = 5 * 1024 * 1024
+MAX_SEARCH_CACHE_FILES = 1000
+MAX_SEARCH_CACHE_BYTES = 100 * 1024 * 1024
+MAX_PREVIEW_BYTES = 10 * 1024 * 1024
 MAX_NODE_NAME_LENGTH = 180
 SEARCH_CACHE_TTL_SECONDS = 5.0
 WINDOWS_RESERVED_NAMES = {
@@ -54,6 +60,7 @@ WINDOWS_RESERVED_NAMES = {
 MARKDOWN_RENDERER = mistune.create_markdown(escape=True)
 _SEARCH_CACHE_BY_ROOT = {}
 _SEARCH_CACHE_LOCK = threading.Lock()
+_FILE_SAVE_LOCK = threading.Lock()
 
 
 def resolve_within(root: Path, path: str = "", allow_root: bool = True) -> Optional[Path]:
@@ -87,6 +94,34 @@ def atomic_write_text(path: Path, content: str) -> None:
     finally:
         if temp_path is not None and temp_path.exists():
             temp_path.unlink()
+
+
+def _revision_for_content(content: str, stat_result) -> dict:
+    return {
+        "mtime_ns": stat_result.st_mtime_ns,
+        "size": stat_result.st_size,
+        "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+    }
+
+
+def read_text_with_revision(path: Path) -> tuple[str, dict]:
+    data = path.read_bytes()
+    content = data.decode("utf-8")
+    return content, _revision_for_content(content, path.stat())
+
+
+def save_text_if_current(path: Path, content: str, expected_revision: Optional[dict]) -> tuple[bool, dict]:
+    with _FILE_SAVE_LOCK:
+        _, current_revision = read_text_with_revision(path)
+        if expected_revision is not None and expected_revision != current_revision:
+            return False, current_revision
+        atomic_write_text(path, content)
+        _, new_revision = read_text_with_revision(path)
+        return True, new_revision
+
+
+def run_external(command: list[str]) -> None:
+    subprocess.run(command, check=True, timeout=30)
 
 
 def validate_node_name(name: str) -> Optional[str]:
@@ -229,52 +264,64 @@ def search_files(root: Path, query: str) -> list:
     results = []
 
     with _SEARCH_CACHE_LOCK:
-        state = _SEARCH_CACHE_BY_ROOT.setdefault(
-            root, {"last_scan": 0.0, "files": {}}
-        )
-        cache = state["files"]
-        if time.monotonic() - state["last_scan"] >= SEARCH_CACHE_TTL_SECONDS:
-            seen = set()
-            for file_path in root.rglob("*"):
-                try:
-                    relative = file_path.relative_to(root)
-                    if "attachments" in relative.parts or not file_path.is_file():
-                        continue
-                    if file_path.suffix.lower() not in searchable_exts:
-                        continue
-                    safe_path = resolve_within(root, relative.as_posix())
-                    if safe_path is None:
-                        continue
-                    stat = safe_path.stat()
-                    seen.add(safe_path)
-                    cached = cache.get(safe_path)
-                    if not cached or cached[0] != stat.st_mtime_ns or cached[1] != stat.st_size:
-                        content = safe_path.read_text(encoding="utf-8")
-                        cache[safe_path] = (
-                            stat.st_mtime_ns, stat.st_size, content, content.lower(),
-                            safe_path.relative_to(root).as_posix(),
-                        )
-                except (OSError, UnicodeError, ValueError):
-                    continue
-            for cached_path in list(cache):
-                if cached_path not in seen:
-                    cache.pop(cached_path, None)
-            state["last_scan"] = time.monotonic()
+        state = _SEARCH_CACHE_BY_ROOT.setdefault(root, {"last_scan": 0.0, "files": {}})
+        cache = dict(state["files"])
+        needs_scan = time.monotonic() - state["last_scan"] >= SEARCH_CACHE_TTL_SECONDS
 
-        for safe_path, cached in cache.items():
-            content, lower_content, relative_path = cached[2], cached[3], cached[4]
-            if keyword in lower_content:
-                idx = lower_content.index(keyword)
-                start = max(0, idx - 40)
-                end = min(len(content), idx + len(query) + 60)
-                results.append({
-                    "path": relative_path,
-                    "title": safe_path.stem,
-                    "snippet": content[start:end].replace("\n", " "),
-                    "file_type": classify_file(safe_path.suffix),
-                })
-                if len(results) >= 50:
-                    break
+    if needs_scan:
+        seen = set()
+        updates = {}
+        for file_path in root.rglob("*"):
+            try:
+                relative = file_path.relative_to(root)
+                if "attachments" in relative.parts or not file_path.is_file():
+                    continue
+                if file_path.suffix.lower() not in searchable_exts:
+                    continue
+                safe_path = resolve_within(root, relative.as_posix())
+                if safe_path is None:
+                    continue
+                stat = safe_path.stat()
+                seen.add(safe_path)
+                cached = cache.get(safe_path)
+                if stat.st_size > MAX_SEARCH_FILE_BYTES:
+                    continue
+                if cached and cached[0] == stat.st_mtime_ns and cached[1] == stat.st_size:
+                    updates[safe_path] = cached
+                    continue
+                content = safe_path.read_text(encoding="utf-8")
+                updates[safe_path] = (
+                    stat.st_mtime_ns, stat.st_size, content, content.lower(),
+                    safe_path.relative_to(root).as_posix(),
+                )
+            except (OSError, UnicodeError, ValueError):
+                continue
+
+        if len(updates) > MAX_SEARCH_CACHE_FILES:
+            updates = dict(sorted(updates.items(), key=lambda item: item[1][0], reverse=True)[:MAX_SEARCH_CACHE_FILES])
+        while sum(item[1][1] for item in updates.items()) > MAX_SEARCH_CACHE_BYTES:
+            oldest = min(updates, key=lambda path: updates[path][0])
+            updates.pop(oldest, None)
+        with _SEARCH_CACHE_LOCK:
+            state = _SEARCH_CACHE_BY_ROOT.setdefault(root, {"last_scan": 0.0, "files": {}})
+            state["files"] = {path: cached for path, cached in updates.items() if path in seen}
+            state["last_scan"] = time.monotonic()
+            cache = dict(state["files"])
+
+    for safe_path, cached in cache.items():
+        content, lower_content, relative_path = cached[2], cached[3], cached[4]
+        if keyword in lower_content:
+            idx = lower_content.index(keyword)
+            start = max(0, idx - 40)
+            end = min(len(content), idx + len(query) + 60)
+            results.append({
+                "path": relative_path,
+                "title": safe_path.stem,
+                "snippet": content[start:end].replace("\n", " "),
+                "file_type": classify_file(safe_path.suffix),
+            })
+            if len(results) >= 50:
+                break
     return results
 
 
@@ -331,9 +378,12 @@ async def files(path: str):
 
 
 @app.get("/api/tree")
-async def tree():
+async def tree(path: str = Query("")):
     root = RESULT_DIR.resolve()
-    return JSONResponse(await asyncio.to_thread(build_tree, root, root))
+    target = resolve_within(root, path)
+    if target is None or not target.is_dir():
+        return JSONResponse({"error": "invalid path"}, status_code=400)
+    return JSONResponse(await asyncio.to_thread(build_tree_level, target, root))
 
 
 @app.get("/api/doc")
@@ -344,6 +394,11 @@ async def doc(path: str = Query(...)):
         return JSONResponse({"error": "invalid path"}, status_code=400)
     if not file_path.is_file() or file_path.suffix.lower() != ".md":
         return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        if file_path.stat().st_size > MAX_PREVIEW_BYTES:
+            return JSONResponse({"error": "file is too large to preview"}, status_code=413)
+    except OSError:
+        return JSONResponse({"error": "file unavailable"}, status_code=404)
 
     try:
         content = await asyncio.to_thread(file_path.read_text, encoding="utf-8")
@@ -372,10 +427,14 @@ async def raw(path: str = Query(...)):
     if not file_path.is_file() or file_path.suffix.lower() != ".md":
         return JSONResponse({"error": "not found"}, status_code=404)
     try:
-        content = await asyncio.to_thread(file_path.read_text, encoding="utf-8")
+        if file_path.stat().st_size > MAX_PREVIEW_BYTES:
+            return JSONResponse({"error": "file is too large to edit"}, status_code=413)
+        content, revision = await asyncio.to_thread(read_text_with_revision, file_path)
     except UnicodeError:
         return JSONResponse({"error": "file is not UTF-8"}, status_code=422)
-    return JSONResponse({"content": content, "path": file_path.relative_to(root).as_posix()})
+    except OSError:
+        return JSONResponse({"error": "file unavailable"}, status_code=404)
+    return JSONResponse({"content": content, "path": file_path.relative_to(root).as_posix(), "revision": revision})
 
 
 @app.post("/api/save")
@@ -390,9 +449,24 @@ async def save(data: dict = Body(...)):
         return JSONResponse({"error": "invalid path"}, status_code=400)
     if not file_path.is_file() or file_path.suffix.lower() != ".md":
         return JSONResponse({"error": "not found"}, status_code=404)
-    await asyncio.to_thread(atomic_write_text, file_path, content)
+    expected_revision = data.get("revision")
+    if expected_revision is not None and not isinstance(expected_revision, dict):
+        return JSONResponse({"error": "invalid revision"}, status_code=400)
+    try:
+        saved, current_revision = await asyncio.to_thread(
+            save_text_if_current, file_path, content, expected_revision
+        )
+    except UnicodeError:
+        return JSONResponse({"error": "file is not UTF-8"}, status_code=422)
+    except OSError:
+        return JSONResponse({"error": "file unavailable"}, status_code=404)
+    if not saved:
+        return JSONResponse(
+            {"error": "file changed externally", "revision": current_revision},
+            status_code=409,
+        )
     await asyncio.to_thread(invalidate_search_cache, root)
-    return JSONResponse({"ok": True})
+    return JSONResponse({"ok": True, "revision": current_revision})
 
 
 @app.post("/api/open-file")
@@ -408,11 +482,11 @@ async def open_file(data: dict = Body(...)):
         return JSONResponse({"error": "not found"}, status_code=404)
     try:
         if platform.system() == "Windows":
-            os.startfile(str(file_path))
+            await asyncio.to_thread(os.startfile, str(file_path))
         elif platform.system() == "Darwin":  # macOS
-            subprocess.run(["open", str(file_path)])
+            await asyncio.to_thread(run_external, ["open", str(file_path)])
         else:  # Linux
-            subprocess.run(["xdg-open", str(file_path)])
+            await asyncio.to_thread(run_external, ["xdg-open", str(file_path)])
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     return JSONResponse({"ok": True})
@@ -431,11 +505,11 @@ async def open_folder(data: dict = Body(...)):
         return JSONResponse({"error": "not found"}, status_code=404)
     try:
         if platform.system() == "Windows":
-            subprocess.run(["explorer", "/select,", str(file_path)])
+            await asyncio.to_thread(run_external, ["explorer", "/select,", str(file_path)])
         elif platform.system() == "Darwin":  # macOS
-            subprocess.run(["open", "-R", str(file_path)])
+            await asyncio.to_thread(run_external, ["open", "-R", str(file_path)])
         else:  # Linux
-            subprocess.run(["xdg-open", str(file_path.parent)])
+            await asyncio.to_thread(run_external, ["xdg-open", str(file_path.parent)])
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     return JSONResponse({"ok": True})
@@ -536,10 +610,9 @@ async def delete_node(data: dict = Body(...)):
         return JSONResponse({"error": "not found"}, status_code=404)
     try:
         if target.is_dir():
-            import shutil
-            shutil.rmtree(target)
+            await asyncio.to_thread(shutil.rmtree, target)
         else:
-            target.unlink()
+            await asyncio.to_thread(target.unlink)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
     await asyncio.to_thread(invalidate_search_cache, RESULT_DIR)
@@ -643,6 +716,11 @@ async def file_preview(path: str = Query(...)):
         return JSONResponse({"error": "invalid path"}, status_code=400)
     if not file_path.is_file():
         return JSONResponse({"error": "not found"}, status_code=404)
+    try:
+        if file_path.stat().st_size > MAX_PREVIEW_BYTES:
+            return JSONResponse({"error": "file is too large to preview"}, status_code=413)
+    except OSError:
+        return JSONResponse({"error": "file unavailable"}, status_code=404)
 
     file_type = classify_file(file_path.suffix)
     name = file_path.name
@@ -737,6 +815,55 @@ def build_tree(dir_path: Path, root: Optional[Path] = None,
                 continue
             file_type = classify_file(safe_entry.suffix)
             rel_path = safe_entry.relative_to(root).as_posix()
+            display_name = safe_entry.stem if file_type == "markdown" else safe_entry.name
+            items.append({
+                "name": display_name,
+                "type": "file",
+                "file_type": file_type,
+                "path": rel_path,
+            })
+    return items
+
+
+def build_tree_level(dir_path: Path, root: Optional[Path] = None) -> list:
+    """Build one directory level; child directories are loaded on demand."""
+    root = (root or dir_path).resolve()
+    resolved_dir = dir_path.resolve()
+    try:
+        resolved_dir.relative_to(root)
+    except ValueError:
+        return []
+    try:
+        entries = sorted(resolved_dir.iterdir(), key=lambda e: (e.is_file(), natural_sort_key(e.name)))
+    except OSError:
+        return []
+    items = []
+    for entry in entries:
+        if entry.name.startswith(".") or entry.name == "attachments":
+            continue
+        try:
+            safe_entry = entry.resolve()
+            safe_entry.relative_to(root)
+        except (OSError, ValueError):
+            continue
+        rel_path = safe_entry.relative_to(root).as_posix()
+        if safe_entry.is_dir():
+            try:
+                has_children = any(
+                    child.name != "attachments" and not child.name.startswith(".")
+                    for child in safe_entry.iterdir()
+                )
+            except OSError:
+                has_children = False
+            items.append({
+                "name": entry.name,
+                "type": "dir",
+                "path": rel_path,
+                "children": None,
+                "has_children": has_children,
+            })
+        elif safe_entry.is_file():
+            file_type = classify_file(safe_entry.suffix)
             display_name = safe_entry.stem if file_type == "markdown" else safe_entry.name
             items.append({
                 "name": display_name,

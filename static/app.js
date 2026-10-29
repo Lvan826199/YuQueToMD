@@ -15,6 +15,9 @@ let easyMDE = null;
 let autoSaveTimer = null;
 let saveQueue = Promise.resolve();
 let saveRevision = 0;
+let editorRevision = null;
+let searchController = null;
+let searchRequestId = 0;
 
 async function loadTree() {
     const resp = await fetch("/api/tree");
@@ -105,10 +108,11 @@ function renderTree(items, parentPath) {
     let html = "";
     for (const item of items) {
         if (item.type === "dir") {
-            const dirPath = parentPath ? parentPath + "/" + item.name : item.name;
+            const dirPath = item.path || (parentPath ? parentPath + "/" + item.name : item.name);
+            const children = item.children === null ? "" : renderTree(item.children || [], dirPath);
             html += `<div class="tree-item tree-dir">
-                <div class="tree-label" data-dir-path="${escapeHtml(dirPath)}">${escapeHtml(item.name)}</div>
-                <div class="tree-children">${renderTree(item.children, dirPath)}</div>
+                <div class="tree-label" data-dir-path="${escapeHtml(dirPath)}" data-loaded="${item.children === null ? "false" : "true"}">${escapeHtml(item.name)}</div>
+                <div class="tree-children">${children}</div>
             </div>`;
         } else {
             const ft = item.file_type || "markdown";
@@ -184,7 +188,12 @@ function rewritePreviewImagePaths(html, docPath) {
 treeNav.addEventListener("click", (e) => {
     const label = e.target.closest(".tree-label");
     if (label) {
-        label.parentElement.classList.toggle("open");
+        const parent = label.parentElement;
+        if (label.dataset.loaded !== "true") {
+            loadTreeDirectory(label.dataset.dirPath || "", parent).catch(() => showToast("目录加载失败", "error"));
+        } else {
+            parent.classList.toggle("open");
+        }
         return;
     }
     const file = e.target.closest(".tree-file");
@@ -195,6 +204,17 @@ treeNav.addEventListener("click", (e) => {
         file.classList.add("active");
     }
 });
+
+async function loadTreeDirectory(path, node) {
+    const resp = await fetch(`/api/tree?path=${encodeURIComponent(path)}`);
+    if (!resp.ok) throw new Error("tree load failed");
+    const items = await resp.json();
+    const children = node.querySelector(":scope > .tree-children");
+    children.innerHTML = renderTree(items, path);
+    const label = node.querySelector(":scope > .tree-label");
+    label.dataset.loaded = "true";
+    node.classList.add("open");
+}
 
 docContent.addEventListener("click", (e) => {
     const button = e.target.closest("[data-open-path]");
@@ -335,6 +355,7 @@ function addCopyButtons() {
 
 searchInput.addEventListener("input", () => {
     clearTimeout(searchTimer);
+    if (searchController) searchController.abort();
     const q = searchInput.value.trim();
     searchClear.style.display = q ? "block" : "none";
     if (!q) {
@@ -346,6 +367,7 @@ searchInput.addEventListener("input", () => {
 });
 
 searchClear.addEventListener("click", () => {
+    if (searchController) searchController.abort();
     searchInput.value = "";
     searchClear.style.display = "none";
     searchResults.style.display = "none";
@@ -353,20 +375,37 @@ searchClear.addEventListener("click", () => {
 });
 
 async function doSearch(q) {
-    const resp = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
-    const results = await resp.json();
-    if (results.length === 0) {
-        searchResults.innerHTML = `<div style="padding:12px;color:#57606a;">未找到匹配内容</div>`;
-    } else {
-        searchResults.innerHTML = results.map(r => `
-            <div class="search-item" data-path="${escapeHtml(r.path)}" data-file-type="${r.file_type || 'markdown'}">
-                <div class="title">${escapeHtml(r.title)}</div>
-                <div class="snippet">${escapeHtml(r.snippet)}</div>
-            </div>
-        `).join("");
+    const requestId = ++searchRequestId;
+    searchController = new AbortController();
+    try {
+        const resp = await fetch(`/api/search?q=${encodeURIComponent(q)}`, {
+            signal: searchController.signal,
+        });
+        if (!resp.ok) throw new Error("search failed");
+        const results = await resp.json();
+        if (requestId !== searchRequestId || searchInput.value.trim() !== q) return;
+        if (results.length === 0) {
+            searchResults.innerHTML = `<div style="padding:12px;color:#57606a;">未找到匹配内容</div>`;
+        } else {
+            searchResults.innerHTML = results.map(r => `
+                <div class="search-item" data-path="${escapeHtml(r.path)}" data-file-type="${r.file_type || 'markdown'}">
+                    <div class="title">${escapeHtml(r.title)}</div>
+                    <div class="snippet">${escapeHtml(r.snippet)}</div>
+                </div>
+            `).join("");
+        }
+        searchResults.style.display = "block";
+        treeNav.style.display = "none";
+    } catch (error) {
+        if (error.name === "AbortError") return;
+        if (requestId === searchRequestId) {
+            searchResults.innerHTML = `<div style="padding:12px;color:#cf222e;">搜索失败，请稍后重试</div>`;
+            searchResults.style.display = "block";
+            treeNav.style.display = "none";
+        }
+    } finally {
+        if (requestId === searchRequestId) searchController = null;
     }
-    searchResults.style.display = "block";
-    treeNav.style.display = "none";
 }
 
 searchResults.addEventListener("click", (e) => {
@@ -493,6 +532,7 @@ async function enterEditMode(path) {
     const resp = await fetch(`/api/raw?path=${encodeURIComponent(path)}`);
     const data = await resp.json();
     if (data.error) return;
+    editorRevision = data.revision || null;
 
     document.body.classList.add("editing");
     docContent.innerHTML = `<div class="doc-toolbar">
@@ -590,10 +630,11 @@ async function saveDoc(path) {
             const resp = await fetch("/api/save", {
                 method: "POST",
                 headers: {"Content-Type": "application/json"},
-                body: JSON.stringify({path, content}),
+                body: JSON.stringify({path, content, revision: editorRevision}),
             });
             const data = await resp.json();
             if (data.ok) {
+                editorRevision = data.revision || editorRevision;
                 if (statusEl) {
                     statusEl.textContent = "已保存";
                     statusEl.style.color = "#2da44e";
@@ -603,6 +644,13 @@ async function saveDoc(path) {
                     if (statusEl) statusEl.textContent = "";
                 }, 2000);
                 return true;
+            }
+            if (resp.status === 409) {
+                if (statusEl) {
+                    statusEl.textContent = "文件已被外部修改，请重新加载";
+                    statusEl.style.color = "#cf222e";
+                }
+                return false;
             }
             if (statusEl) {
                 statusEl.textContent = "保存失败";
