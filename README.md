@@ -16,7 +16,7 @@ Author: **梦无矶** | 公众号: **梦无矶测开实录**
 
 [GitHub](https://github.com/Lvan826199/YuQueToMD) · [Gitee](https://gitee.com/xiaozai-van-liu/YuQueToMD)
 
-当前版本：**v1.4.0** · [更新日志](CHANGELOG.md)
+当前版本：**v1.5.0** · [更新日志](CHANGELOG.md)
 
 </div>
 
